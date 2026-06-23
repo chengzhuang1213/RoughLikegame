@@ -1,9 +1,9 @@
 import type { CSSProperties } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CHARACTER_POOL,
+  BOND_GROUPS,
   NODE_LABELS,
-  REWARD_GOLD,
   RARITY_LABELS,
   SECONDARY_BONDS,
   applyPostNodePassives,
@@ -24,12 +24,62 @@ import {
   getActiveSecondaryBonds,
   getBattleSlots,
   getRandomBossForTier,
+  getRewardGold,
   isBattleNode,
   resolveBattleGroup,
   sample,
 } from './game';
 
-type Screen = 'start' | 'draft' | 'map' | 'battle' | 'result' | 'shop' | 'rest' | 'win' | 'loss';
+type Screen = 'start' | 'draft' | 'map' | 'battle' | 'result' | 'shop' | 'rest' | 'blessing' | 'win' | 'loss';
+
+type MusicKey = 'home' | 'draftShop' | 'battle' | 'rest' | 'map';
+type SfxKey = 'mapSelect' | 'next' | 'buy' | 'battleVictory';
+
+const MUSIC_SRC: Record<MusicKey, string> = {
+  home: '/audio/home.mp3',
+  draftShop: '/audio/draft-shop.mp3',
+  battle: '/audio/battle.mp3',
+  rest: '/audio/rest.mp3',
+  map: '/audio/home.mp3',
+};
+
+const SFX_SRC: Record<SfxKey, string> = {
+  mapSelect: '/audio/map-select.mp3',
+  next: '/audio/next.mp3',
+  buy: '/audio/buy.mp3',
+  battleVictory: '/audio/battle-victory.mp3',
+};
+
+const BOND_LOGO_SRC: Record<string, string> = {
+  cute: '/ui/bond-logos/cute.png',
+  silver: '/ui/bond-logos/silver.png',
+  president: '/ui/bond-logos/president.png',
+  mystery: '/ui/bond-logos/mystery.png',
+  little_devil: '/ui/bond-logos/little_devil.png',
+  nozoeli: '/ui/bond-logos/nozoeli.png',
+  angel: '/ui/bond-logos/angel.png',
+  dreamer: '/ui/bond-logos/dreamer.png',
+  lucky_star: '/ui/bond-logos/lucky_star.png',
+  campus_leader: '/ui/bond-logos/campus_leader.png',
+  full_speed: '/ui/bond-logos/full_speed.png',
+  energetic_idol: '/ui/bond-logos/energetic_idol.png',
+};
+
+function getMusicKey(run: RunState): MusicKey {
+  if (run.screen === 'battle') {
+    return 'battle';
+  }
+  if (run.screen === 'draft' || run.screen === 'shop') {
+    return 'draftShop';
+  }
+  if (run.screen === 'rest' || run.screen === 'blessing') {
+    return 'rest';
+  }
+  if (run.screen === 'map') {
+    return 'map';
+  }
+  return 'home';
+}
 
 interface ResultState {
   title: string;
@@ -51,30 +101,48 @@ interface RunState {
   shopOffers: CharacterTemplate[];
   restHealUsed: boolean;
   restReviveUsed: boolean;
+  pendingEnhance: { source: 'elite' | 'boss'; cost: number; free: boolean } | null;
+  pendingBossVictory: boolean;
 }
 
 type HealType = 'small' | 'large';
 
-const HEAL_OPTIONS: Record<HealType, { label: string; cost: number; amount: number }> = {
-  small: { label: '小治疗', cost: 20, amount: 50 },
-  large: { label: '大治疗', cost: 40, amount: 100 },
+const HEAL_OPTIONS: Record<HealType, { label: string; cost: number; amount: number; full?: boolean }> = {
+  small: { label: '小治疗', cost: 20, amount: 15 },
+  large: { label: '大治疗', cost: 50, amount: 0, full: true },
 };
-const REVIVE_COST = 60;
+const REVIVE_COST = 80;
 const REVIVE_HP_RATIO = 0.6;
+const ENHANCE_COST = 20;
+
+function applyLayerBlessing(team: Character[]): Character[] {
+  return team.map((member) => {
+    const blessedHp = Math.ceil(member.maxHp * 0.5);
+    if (member.injured || member.hp <= 0) {
+      return { ...member, injured: false, hp: blessedHp };
+    }
+
+    if (member.hp < blessedHp) {
+      return { ...member, hp: blessedHp };
+    }
+
+    return member;
+  });
+}
 
 const DRAFT_IMAGE_BY_ID: Record<string, string> = {
   ayumu: '/cards/Image/102Uehara-Ayumu-KN13pl.png',
   rina: '/cards/Image/97Tennoji-Rina-YB8JUo.png',
-  nico: '/cards/Image/18Yazawa-Nico-agidhY.png',
+  nico: '/cards/heroes/skins/nico-legendary.png',
   kotori: '/cards/Image/9Minami-Kotori-BkWR39.png',
-  keke: '/cards/Image/119Tang-Keke-4Tr0Yx.png',
+  keke: '/cards/heroes/skins/keke-legendary.png',
   you: '/cards/Image/17Watanabe-You-En1r2L.png',
   eli: '/cards/Image/1Ayase-Eli-wRbUwD.png',
-  mari: '/cards/Image/11Ohara-Mari-nI3CW6.png',
+  mari: '/cards/heroes/skins/mari-legendary.png',
   ren: '/cards/Image/122Hazuki-Ren-fZ9vXK.png',
   yoshiko: '/cards/Image/16Tsushima-Yoshiko-NdFuZH.png',
   nozomi: '/cards/Image/15Toujou-Nozomi-S678cZ.png',
-  kanata: '/cards/Image/50Konoe-Kanata-82Ei8T.png',
+  kanata: '/cards/heroes/skins/kanata-legendary.png',
 };
 
 function createRun(): RunState {
@@ -85,7 +153,7 @@ function createRun(): RunState {
     candidates: createDraftCandidates(),
     draftSelection: [],
     team: [],
-    gold: 40,
+    gold: 80,
     map: buildMap(),
     currentNodeId: null,
     battle: null,
@@ -94,6 +162,8 @@ function createRun(): RunState {
     shopOffers: [],
     restHealUsed: false,
     restReviveUsed: false,
+    pendingEnhance: null,
+    pendingBossVictory: false,
   };
 }
 
@@ -116,12 +186,69 @@ function draftImageSrc(template: CharacterTemplate) {
   return DRAFT_IMAGE_BY_ID[template.id] ?? template.avatar;
 }
 
-function getSecondaryBondNames(templateId: string) {
-  return SECONDARY_BONDS.filter((bond) => bond.memberIds.includes(templateId)).map((bond) => bond.name);
+function getSecondaryBondsForTemplate(templateId: string) {
+  return SECONDARY_BONDS.filter((bond) => bond.memberIds.includes(templateId));
+}
+
+function getBondGroupForTemplate(template: CharacterTemplate) {
+  return BOND_GROUPS.find((group) => group.id === template.group) ?? null;
 }
 
 function getTemplateById(id: string) {
   return CHARACTER_POOL.find((character) => character.id === id) ?? null;
+}
+
+function maxUpgradeLevel(rarity: Character['rarity'] | CharacterTemplate['rarity']) {
+  if (rarity === 'normal') {
+    return 2;
+  }
+  if (rarity === 'star' || rarity === 'legendary') {
+    return 3;
+  }
+  return 1;
+}
+
+function getUpgradeEffectLines(templateId: string, level: number): string[] {
+  switch (templateId) {
+    case 'ayumu':
+      return level >= 3 ? ['技能：全体恢复15生命，并解除所有毒层。', '被动：治疗友军后，下次治疗+3点。'] : level >= 2 ? ['技能：全体恢复10生命。', '被动：治疗友军后，下次治疗+3点。'] : ['技能：全体恢复5生命。', '被动：治疗友军后，下次治疗+3点。'];
+    case 'rina':
+      return level >= 2 ? ['技能：50%概率追加攻击，并获得10护盾。'] : ['技能：30%概率追加攻击。'];
+    case 'nico':
+      return level >= 3 ? ['被动：每次使用技能攻击力+4。', '技能：失去10%当前生命，连续攻击4次。'] : level >= 2 ? ['被动：每次使用技能攻击力+4。', '技能：失去10%当前生命，连续攻击3次。'] : ['被动：每次使用技能攻击力+3。', '技能：失去10%当前生命，连续攻击3次。'];
+    case 'kotori':
+      return level >= 3 ? ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：50%暴击，暴击2倍，额外造成10点真实伤害。'] : level >= 2 ? ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：50%暴击，暴击2倍。'] : ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：30%暴击，暴击2倍。'];
+    case 'keke':
+      return level >= 3 ? ['被动：造成伤害的30%恢复为生命。', '技能CD1：立即发动，50%造成3倍伤害，50%造成4倍伤害。'] : level >= 2 ? ['被动：造成伤害的30%恢复为生命。', '技能CD1：立即发动，本次攻击造成2倍伤害。'] : ['被动：造成伤害的30%恢复为生命。', '技能CD1：本回合不攻击，下次攻击造成2倍伤害。'];
+    case 'you':
+      return level >= 2 ? ['技能：首次攻击施加易损，下次伤害2.5倍。'] : ['技能：首次攻击施加易损，下次伤害2倍。'];
+    case 'eli':
+      return level >= 3 ? ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+4，并获得2点速度。'] : level >= 2 ? ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+3。'] : ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+2。'];
+    case 'mari':
+      return level >= 3 ? ['被动：拥有护盾时伤害提高150%。', '技能：获得20护盾。'] : level >= 2 ? ['被动：拥有护盾时伤害提高100%。', '技能：获得15护盾。'] : ['被动：拥有护盾时伤害提高50%。', '技能：获得10护盾。'];
+    case 'ren':
+      return level >= 2 ? ['被动：生命值额外+50。', '无主动技能。'] : ['被动：生命值额外+30。', '无主动技能。'];
+    case 'yoshiko':
+      return level >= 3 ? ['被动：攻击附加1层毒；目标已有毒时，攻击额外+3伤害。', '技能：附加4层毒。'] : level >= 2 ? ['被动：攻击附加1层毒。', '技能：附加4层毒。'] : ['被动：攻击附加1层毒。', '技能：附加3层毒。'];
+    case 'nozomi':
+      return level >= 2 ? ['被动：每回合开始获得3点护盾。', '技能：给一名非自己的友方8点护盾。'] : ['被动：每回合开始获得3点护盾。', '技能：给一名非自己的友方5点护盾。'];
+    case 'kanata':
+      return level >= 3 ? ['被动：战斗结束后生命强制变为50%。', '技能：敌方生命低于35%立即斩杀。', 'Boss战首次受到致命伤害时保留1HP，下次攻击3倍。'] : level >= 2 ? ['被动：战斗结束后生命强制变为50%。', '技能：敌方生命低于30%立即斩杀。', 'Boss战首次受到致命伤害时保留1HP，下次攻击3倍。'] : ['被动：战斗结束后生命强制变为50%。', '技能：敌方生命低于30%立即斩杀。'];
+    default:
+      return [];
+  }
+}
+
+function UpgradeLevelBadge({ level }: { level: number }) {
+  return <span className="level-badge">LV{level}</span>;
+}
+
+function MusicToggleButton({ muted, onToggle, className = '' }: { muted: boolean; onToggle: () => void; className?: string }) {
+  return (
+    <button className={`music-toggle ${className}`.trim()} type="button" onClick={onToggle} aria-label={muted ? 'BGM off' : 'BGM on'}>
+      {muted ? 'BGM OFF' : 'BGM ON'}
+    </button>
+  );
 }
 
 interface AvatarProps {
@@ -149,6 +276,7 @@ function Avatar({ character, label, small = false }: AvatarProps) {
 
 function App() {
   const [run, setRun] = useState<RunState>(() => createRun());
+  const [musicMuted, setMusicMuted] = useState(false);
 
   const currentNode = useMemo(
     () => run.map.find((node) => node.id === run.currentNodeId) ?? null,
@@ -156,12 +284,114 @@ function App() {
   );
 
   const aliveTeam = run.team.filter((member) => !member.injured && member.hp > 0);
+  const audioRefs = useRef<Partial<Record<MusicKey | SfxKey, HTMLAudioElement>>>({});
+  const audioUnlockedRef = useRef(false);
+  const currentMusicRef = useRef<MusicKey | null>(null);
+  const lastVictoryNodeRef = useRef<string | null>(null);
+
+  function getAudio(key: MusicKey | SfxKey, src: string) {
+    const existing = audioRefs.current[key];
+    if (existing) {
+      return existing;
+    }
+
+    const audio = new Audio(src);
+    audio.preload = 'auto';
+    audioRefs.current[key] = audio;
+    return audio;
+  }
+
+  function playMusic(key: MusicKey) {
+    if (musicMuted) {
+      (Object.keys(MUSIC_SRC) as MusicKey[]).forEach((musicKey) => {
+        getAudio(musicKey, MUSIC_SRC[musicKey]).pause();
+      });
+      return;
+    }
+
+    if (!audioUnlockedRef.current) {
+      return;
+    }
+
+    (Object.keys(MUSIC_SRC) as MusicKey[]).forEach((musicKey) => {
+      const audio = getAudio(musicKey, MUSIC_SRC[musicKey]);
+      if (musicKey !== key) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    });
+
+    const audio = getAudio(key, MUSIC_SRC[key]);
+    audio.loop = true;
+    audio.volume = key === 'battle' ? 0.38 : 0.42;
+    if (currentMusicRef.current !== key) {
+      audio.currentTime = 0;
+      currentMusicRef.current = key;
+    }
+    void audio.play().catch(() => undefined);
+  }
+
+  function playSfx(key: SfxKey) {
+    if (!audioUnlockedRef.current) {
+      return;
+    }
+
+    const audio = getAudio(key, SFX_SRC[key]);
+    audio.loop = false;
+    audio.volume = 0.74;
+    audio.pause();
+    audio.currentTime = 0;
+    void audio.play().catch(() => undefined);
+  }
+
+  function unlockAudio() {
+    if (audioUnlockedRef.current) {
+      return;
+    }
+
+    audioUnlockedRef.current = true;
+    playMusic(getMusicKey(run));
+  }
+
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  });
+
+  useEffect(() => {
+    playMusic(getMusicKey(run));
+  }, [run.screen, run.battle?.type, musicMuted]);
+
+  function toggleMusic() {
+    unlockAudio();
+    setMusicMuted((muted) => !muted);
+  }
+
+  useEffect(() => {
+    if (run.screen === 'battle' && run.battle?.phase === 'won') {
+      if (lastVictoryNodeRef.current !== run.battle.nodeId) {
+        lastVictoryNodeRef.current = run.battle.nodeId;
+        playSfx('battleVictory');
+      }
+      return;
+    }
+
+    if (run.battle?.phase !== 'won') {
+      lastVictoryNodeRef.current = null;
+    }
+  }, [run.screen, run.battle?.phase, run.battle?.nodeId]);
+
 
   function resetRun() {
     setRun(createRun());
   }
 
   function startGame() {
+    playSfx('next');
     setRun({
       ...createRun(),
       screen: 'draft',
@@ -192,6 +422,10 @@ function App() {
   }
 
   function confirmDraft() {
+    if (run.draftSelection.length === 2) {
+      playSfx('next');
+    }
+
     setRun((previous) => {
       if (previous.draftSelection.length !== 2) {
         return previous;
@@ -211,6 +445,8 @@ function App() {
       return;
     }
 
+    playSfx('mapSelect');
+
     setRun((previous) => {
       if (!node.available || node.completed) {
         return previous;
@@ -224,15 +460,16 @@ function App() {
 
         const battleType: BattleType = node.type;
         const slots = getBattleSlots(battleType, aliveCount);
+        const enemies = createEnemiesForBattle(battleType, previous.boss);
         const battle: BattleState = {
           nodeId: node.id,
           type: battleType,
-          enemies: createEnemiesForBattle(battleType, previous.boss),
+          enemies,
           activeEnemyIndex: 0,
           selectedIds: [],
           slots,
           phase: 'select',
-          rewardGold: REWARD_GOLD[battleType],
+          rewardGold: getRewardGold(battleType, enemies),
           log: [`遭遇${NODE_LABELS[battleType]}。先确认敌人，再选择${slots}名出战伙伴。`],
           runtime: {},
         };
@@ -250,10 +487,13 @@ function App() {
 
       if (node.type === 'shop') {
         const ownedIds = new Set(previous.team.map((member) => member.templateId));
-        const shopOffers = sample(
-          CHARACTER_POOL.filter((character) => !ownedIds.has(character.id)),
-          3,
-        );
+        const availableOffers = CHARACTER_POOL.filter((character) => !ownedIds.has(character.id));
+        const legendaryOffers = availableOffers.filter((character) => character.rarity === 'legendary');
+        const nonLegendaryOffers = availableOffers.filter((character) => character.rarity !== 'legendary');
+        const guaranteedLegendary = previous.boss.bossTier >= 2 ? sample(legendaryOffers, 1) : [];
+        const shopOffers = guaranteedLegendary.length > 0
+          ? [...guaranteedLegendary, ...sample(nonLegendaryOffers, 2)]
+          : sample(availableOffers, 3);
 
         return {
           ...previous,
@@ -277,49 +517,61 @@ function App() {
     });
   }
 
-  function finishCurrentNode() {
-    setRun((previous) => {
-      if (!previous.currentNodeId) {
-        return { ...previous, screen: 'map' };
-      }
+  function advanceAfterCurrentNode(previous: RunState, teamInput = previous.team): RunState {
+    if (!previous.currentNodeId) {
+      return { ...previous, screen: 'map', pendingEnhance: null, pendingBossVictory: false };
+    }
 
-      const team = applyPostNodePassives(previous.team);
-      const clearedNodeMap = completeMapNode(previous.map, previous.currentNodeId);
-      const shouldAdvanceLayer =
-        previous.battle?.type === 'boss' &&
-        previous.battle.phase === 'won' &&
-        previous.boss.bossTier < 3;
+    const team = applyPostNodePassives(teamInput);
+    const clearedNodeMap = completeMapNode(previous.map, previous.currentNodeId);
+    const shouldAdvanceLayer =
+      previous.battle?.type === 'boss' &&
+      previous.battle.phase === 'won' &&
+      previous.boss.bossTier < 3;
 
-      if (shouldAdvanceLayer) {
-        const nextTier = (previous.boss.bossTier + 1) as BossTier;
-        return {
-          ...previous,
-          screen: 'map',
-          team,
-          map: buildMap(),
-          currentNodeId: null,
-          battle: null,
-          boss: getRandomBossForTier(nextTier),
-          result: null,
-          shopOffers: [],
-          restHealUsed: false,
-          restReviveUsed: false,
-        };
-      }
-
+    if (shouldAdvanceLayer) {
+      const nextTier = (previous.boss.bossTier + 1) as BossTier;
       return {
         ...previous,
-        screen: 'map',
-        team,
-        map: clearedNodeMap,
+        screen: 'blessing',
+        team: applyLayerBlessing(team),
+        map: buildMap(),
         currentNodeId: null,
         battle: null,
+        boss: getRandomBossForTier(nextTier),
         result: null,
         shopOffers: [],
         restHealUsed: false,
         restReviveUsed: false,
+        pendingEnhance: null,
+        pendingBossVictory: false,
       };
-    });
+    }
+
+    return {
+      ...previous,
+      screen: 'map',
+      team,
+      map: clearedNodeMap,
+      currentNodeId: null,
+      battle: null,
+      result: null,
+      shopOffers: [],
+      restHealUsed: false,
+      restReviveUsed: false,
+      pendingEnhance: null,
+        pendingBossVictory: false,
+    };
+  }
+  function finishCurrentNode() {
+    setRun((previous) => advanceAfterCurrentNode(previous));
+  }
+
+  function continueFromBlessing() {
+    setRun((previous) => ({
+      ...previous,
+      screen: 'map',
+    }));
   }
 
   function toggleBattleSelection(id: string) {
@@ -363,6 +615,7 @@ function App() {
       if (battle.phase === 'won') {
         const isBossBattle = battle.type === 'boss';
         const isFinalBoss = isBossBattle && previous.boss.bossTier === 3;
+        const canEnhance = battle.type === 'elite' || (isBossBattle && !isFinalBoss);
         const result: ResultState = {
           title: isBossBattle ? `第${previous.boss.bossTier}层 Boss胜利` : `${NODE_LABELS[battle.type]}胜利`,
           body: isBossBattle
@@ -379,7 +632,10 @@ function App() {
           gold: previous.gold + battle.rewardGold,
           battle,
           result,
-          screen: isFinalBoss ? 'win' : 'result',
+          screen: isFinalBoss ? 'win' : 'battle',
+          pendingEnhance: canEnhance
+            ? { source: battle.type === 'boss' ? 'boss' : 'elite', cost: battle.type === 'boss' ? 0 : ENHANCE_COST, free: battle.type === 'boss' }
+            : null,
         };
       }
 
@@ -401,7 +657,74 @@ function App() {
     });
   }
 
+  function completeEnhancement(id: string | null) {
+    setRun((previous) => {
+      if (!previous.pendingEnhance) {
+        return previous;
+      }
+
+      const source = previous.pendingEnhance.source;
+      let nextGold = previous.gold;
+      let nextTeam = previous.team;
+
+      if (id) {
+        const target = previous.team.find((member) => member.id === id);
+        const cost = previous.pendingEnhance.cost;
+        if (!target || (target.upgradeLevel ?? 1) >= maxUpgradeLevel(target.rarity) || (!previous.pendingEnhance.free && previous.gold < cost)) {
+          return previous;
+        }
+
+        nextGold = previous.pendingEnhance.free ? previous.gold : previous.gold - cost;
+        nextTeam = previous.team.map((member) => {
+          if (member.id !== id) {
+            return member;
+          }
+
+          const currentLevel = member.upgradeLevel ?? 1;
+          const nextLevel = Math.min(maxUpgradeLevel(member.rarity), currentLevel + 1) as 1 | 2 | 3;
+          const renHpBonus = member.templateId === 'ren' && currentLevel === 1 && nextLevel >= 2 ? 20 : 0;
+          return {
+            ...member,
+            upgradeLevel: nextLevel,
+            maxHp: member.maxHp + renHpBonus,
+            hp: member.hp + renHpBonus,
+          };
+        });
+      }
+
+      const nextState = { ...previous, gold: nextGold, team: nextTeam, pendingEnhance: null };
+      if (source === 'boss') {
+        return { ...nextState, screen: 'battle', pendingBossVictory: true };
+      }
+
+      return advanceAfterCurrentNode(nextState, nextTeam);
+    });
+  }
+
+  function dismissEnhancement() {
+    setRun((previous) => {
+      if (!previous.pendingEnhance) {
+        return previous;
+      }
+
+      const nextState = { ...previous, pendingEnhance: null };
+      if (previous.pendingEnhance.source === 'boss') {
+        return { ...nextState, screen: 'battle', pendingBossVictory: true };
+      }
+
+      return advanceAfterCurrentNode(nextState);
+    });
+  }
+
+  function dismissBossVictory() {
+    setRun((previous) => ({ ...previous, pendingBossVictory: false }));
+  }
+
   function buyCharacter(template: CharacterTemplate) {
+    if (!run.team.some((member) => member.templateId === template.id) && run.gold >= template.price) {
+      playSfx('buy');
+    }
+
     setRun((previous) => {
       const alreadyOwned = previous.team.some((member) => member.templateId === template.id);
       if (alreadyOwned || previous.gold < template.price) {
@@ -420,7 +743,7 @@ function App() {
   function healCharacter(id: string, healType: HealType) {
     setRun((previous) => {
       const heal = HEAL_OPTIONS[healType];
-      const healAmount = heal.amount;
+      const healAmount = heal.full ? Number.MAX_SAFE_INTEGER : heal.amount;
       const member = previous.team.find((character) => character.id === id);
       if (
         previous.restHealUsed ||
@@ -471,7 +794,8 @@ function App() {
 
   if (run.screen === 'start') {
     return (
-      <div className="app-shell start-shell">
+      <div className="app-shell start-shell scene-home">
+        <MusicToggleButton muted={musicMuted} onToggle={toggleMusic} className="floating-music-toggle" />
         <StartScreen onStart={startGame} />
       </div>
     );
@@ -479,7 +803,8 @@ function App() {
 
   if (run.screen === 'draft') {
     return (
-      <div className="app-shell draft-shell">
+      <div className="app-shell draft-shell scene-draft-shop">
+        <MusicToggleButton muted={musicMuted} onToggle={toggleMusic} className="floating-music-toggle" />
         <DraftScreen
           candidates={run.candidates}
           selectedIds={run.draftSelection}
@@ -491,8 +816,18 @@ function App() {
     );
   }
 
+  const sceneClass = run.screen === 'battle' && run.battle
+    ? `scene-battle-${run.battle.type}`
+    : run.screen === 'shop'
+      ? 'scene-draft-shop'
+      : run.screen === 'map'
+        ? 'scene-map'
+        : run.screen === 'rest' || run.screen === 'blessing'
+          ? 'scene-rest-blessing'
+          : 'scene-home';
+
   return (
-    <div className="app-shell game-shell">
+    <div className={`app-shell game-shell ${sceneClass} ${run.screen === 'map' ? 'map-hud-shell' : ''} ${run.screen === 'battle' ? 'battle-shell' : ''}`}>
       <header className="topbar">
         <div>
           <p className="eyebrow">非商用个人 Beta</p>
@@ -522,14 +857,21 @@ function App() {
           </aside>
 
         <section className="screen-panel">
-          {run.screen === 'map' && <MapScreen nodes={run.map} boss={run.boss} onEnter={enterNode} />}
+          {run.screen === 'map' && <MapScreen nodes={run.map} boss={run.boss} team={run.team} gold={run.gold} musicMuted={musicMuted} onToggleMusic={toggleMusic} onEnter={enterNode} />}
 
           {run.screen === 'battle' && run.battle && (
             <BattleScreen
-              battle={run.battle}
+              battle={run.battle}              boss={run.boss}
+              gold={run.gold}
               team={run.team}
-              onToggleSelection={toggleBattleSelection}
-              onStart={startBattle}
+              pendingEnhance={run.pendingEnhance}
+              pendingBossVictory={run.pendingBossVictory}
+              onContinue={finishCurrentNode}
+              onToggleSelection={toggleBattleSelection}              onStart={startBattle}
+              onEnhance={completeEnhancement}
+              onDismissEnhancement={dismissEnhancement}
+              onBossBack={dismissBossVictory}
+              onBossBlessing={finishCurrentNode}
             />
           )}
 
@@ -556,6 +898,10 @@ function App() {
               onRevive={reviveCharacter}
               onLeave={finishCurrentNode}
             />
+          )}
+
+          {run.screen === 'blessing' && (
+            <BlessingScreen team={run.team} tier={run.boss.bossTier} onContinue={continueFromBlessing} />
           )}
 
           {run.screen === 'win' && run.battle && (
@@ -641,16 +987,20 @@ interface BondItemProps {
   ownedIds: Set<string>;
   active: boolean;
   secondary?: boolean;
+  logoSrc?: string;
 }
 
-function BondItem({ name, count, total, subtitle, details, memberIds, ownedIds, active, secondary = false }: BondItemProps) {
+function BondItem({ name, count, total, subtitle, details, memberIds, ownedIds, active, secondary = false, logoSrc }: BondItemProps) {
   return (
     <div className={`bond-item ${active ? 'active' : ''} ${secondary && active ? 'secondary-active' : ''}`}>
-      <div>
-        <strong>
-          {name} {count}/{total}
-        </strong>
-        <span>{subtitle}</span>
+      <div className="bond-item-heading">
+        {logoSrc && <img className="bond-logo" src={logoSrc} alt="" />}
+        <div>
+          <strong>
+            {name} {count}/{total}
+          </strong>
+          <span>{subtitle}</span>
+        </div>
       </div>
       {details.map((detail) => (
         <small key={detail}>{detail}</small>
@@ -659,7 +1009,21 @@ function BondItem({ name, count, total, subtitle, details, memberIds, ownedIds, 
     </div>
   );
 }
+interface BondTagProps {
+  className?: string;
+  label: string;
+  memberIds: string[];
+  ownedIds: Set<string>;
+}
 
+function BondTag({ className = '', label, memberIds, ownedIds }: BondTagProps) {
+  return (
+    <div className={`group-tag bond-tag ${className}`.trim()}>
+      <span>{label}</span>
+      <BondMemberPopover memberIds={memberIds} ownedIds={ownedIds} />
+    </div>
+  );
+}
 function BondPanel({ team }: { team: Character[] }) {
   const ownedIds = new Set(team.map((member) => member.templateId));
   const bonds = getActiveBonds(team).filter((bond) => bond.count > 0);
@@ -688,6 +1052,7 @@ function BondPanel({ team }: { team: Character[] }) {
                   }
                   key={bond.group.id}
                   memberIds={bond.group.memberIds}
+                  logoSrc={BOND_LOGO_SRC[bond.group.id]}
                   name={bond.group.name}
                   ownedIds={ownedIds}
                   subtitle={bond.group.theme}
@@ -703,9 +1068,10 @@ function BondPanel({ team }: { team: Character[] }) {
                 <BondItem
                   active={activeBond.active}
                   count={activeBond.count}
-                  details={activeBond.active ? [activeBond.bond.description] : ['再集齐1名成员激活。']}
+                  details={activeBond.active ? [] : ['再集齐1名成员激活。']}
                   key={activeBond.bond.id}
                   memberIds={activeBond.bond.memberIds}
+                  logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
                   name={activeBond.bond.name}
                   ownedIds={ownedIds}
                   secondary
@@ -779,6 +1145,7 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
             ]}
             key={bond.group.id}
             memberIds={bond.group.memberIds}
+            logoSrc={BOND_LOGO_SRC[bond.group.id]}
             name={bond.group.name}
             ownedIds={ownedIds}
             subtitle={bond.group.theme}
@@ -789,9 +1156,10 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
           <BondItem
             active={activeBond.active}
             count={activeBond.count}
-            details={[activeBond.bond.description]}
+            details={[]}
             key={activeBond.bond.id}
             memberIds={activeBond.bond.memberIds}
+            logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
             name={activeBond.bond.name}
             ownedIds={ownedIds}
             secondary
@@ -811,7 +1179,9 @@ interface DraftCandidateCardProps {
 }
 
 function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardProps) {
-  const secondaryBondNames = getSecondaryBondNames(template.id);
+  const primaryBond = getBondGroupForTemplate(template);
+  const secondaryBonds = getSecondaryBondsForTemplate(template.id);
+  const tagOwnedIds = new Set([template.id]);
 
   return (
     <button
@@ -830,11 +1200,19 @@ function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardP
       </div>
       <div className="draft-card-body">
         <div className="card-tags">
-          <span className="group-tag">{GROUP_LABELS[template.group]}</span>
-          {secondaryBondNames.map((bondName) => (
-            <span className="group-tag secondary-bond-tag" key={bondName}>
-              {bondName}
-            </span>
+          {primaryBond ? (
+            <BondTag label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} />
+          ) : (
+            <span className="group-tag">{GROUP_LABELS[template.group]}</span>
+          )}
+          {secondaryBonds.map((bond) => (
+            <BondTag
+              className="secondary-bond-tag"
+              key={bond.id}
+              label={bond.name}
+              memberIds={bond.memberIds}
+              ownedIds={tagOwnedIds}
+            />
           ))}
           <span className={`rarity-tag rarity-${template.rarity}`}>{RARITY_LABELS[template.rarity]}</span>
         </div>
@@ -872,121 +1250,442 @@ function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardP
 interface MapScreenProps {
   nodes: MapNode[];
   boss: BossTemplate;
+  team: Character[];
+  gold: number;
+  musicMuted: boolean;
+  onToggleMusic: () => void;
   onEnter: (node: MapNode) => void;
 }
 
 function BossForecast({ boss }: { boss: BossTemplate }) {
   return (
     <section className="boss-forecast" aria-label="本层 Boss 预告">
-      <div className="boss-forecast-copy">
-        <p className="eyebrow">第{boss.bossTier}层 Boss 预告</p>
-        <h3>{boss.name}</h3>
-        <p>{boss.feature}</p>
-      </div>
-      <div className="character-card boss-preview-card rarity-boss">
+      <div className="boss-portrait-strip">
         <Avatar character={boss} label={boss.name} />
-        <div className="card-copy">
-          <strong>{boss.name}</strong>
-          <div className="card-tags">
-            <span className="group-tag">第一层 Boss</span>
-            <span className="rarity-tag rarity-boss">{RARITY_LABELS[boss.rarity]}</span>
-          </div>
-          <span>HP {boss.maxHp} · 攻 {boss.attack} · 速 {boss.speed}</span>
-          {boss.passive && <small>被动「{boss.passive.name}」：{boss.passive.description}</small>}
-          <small>技能「{boss.skill.name}」：{boss.skill.description}</small>
-          {boss.mechanic && <small>终极机制：{boss.mechanic}</small>}
-        </div>
       </div>
+      <div className="boss-forecast-copy">
+        <h3>
+          <span className="boss-crown">♛</span> 本层Boss：{boss.name}
+          <span className="boss-type-pill">{boss.feature}</span>
+        </h3>
+        {boss.passive && <p>被动：{boss.passive.description}</p>}
+      </div>
+      <button className="codex-button" type="button">
+        <span>▣</span>
+        Boss图鉴
+      </button>
     </section>
   );
 }
 
-function MapScreen({ nodes, boss, onEnter }: MapScreenProps) {
-  const rows = useMemo(
-    () =>
-      unique(nodes.map((node) => node.row)).map((row) => ({
-        row,
-        nodes: nodes.filter((node) => node.row === row),
-      })),
-    [nodes],
+const NODE_ICON_SRC: Record<MapNode['type'], string> = {
+  battle: '/ui/node-icons/battle.png',
+  elite: '/ui/node-icons/elite.png',
+  shop: '/ui/node-icons/shop.png',
+  rest: '/ui/node-icons/rest.png',
+  boss: '/ui/node-icons/boss.png',
+};
+
+
+const NODE_HELP: Record<MapNode['type'], string> = {
+  battle: '击败敌人',
+  elite: '更强敌人',
+  shop: '招募角色/道具',
+  rest: '恢复生命/移除卡牌',
+  boss: '击败Boss前往下一层',
+};
+const MAP_ROW_Y: Record<number, number> = {
+  5: 8,
+  4: 24,
+  3: 40,
+  2: 56,
+  1: 72,
+  0: 88,
+};
+
+function getNodeX(node: MapNode) {
+  const rowSize = node.row === 5 ? 1 : node.row === 4 ? 2 : 3;
+  if (rowSize === 1) {
+    return 50;
+  }
+  if (rowSize === 2) {
+    return node.col === 0 ? 38 : 62;
+  }
+  return [28, 50, 72][node.col] ?? 50;
+}
+
+function getNodePosition(node: MapNode) {
+  return {
+    x: getNodeX(node),
+    y: MAP_ROW_Y[node.row] ?? 50,
+  };
+}
+
+function getRouteConnections(nodes: MapNode[]) {
+  const byRow = new Map<number, MapNode[]>();
+  nodes.forEach((node) => {
+    byRow.set(node.row, [...(byRow.get(node.row) ?? []), node]);
+  });
+
+  return nodes.flatMap((fromNode) => {
+    if (!fromNode.available && !fromNode.completed) {
+      return [];
+    }
+
+    const nextNodes = byRow.get(fromNode.row + 1) ?? [];
+    return nextNodes
+      .filter((toNode) => Math.abs(toNode.col - fromNode.col) <= 1)
+      .filter((toNode) => fromNode.available || toNode.available || toNode.completed)
+      .map((toNode) => ({
+        id: `${fromNode.id}-${toNode.id}`,
+        from: getNodePosition(fromNode),
+        to: getNodePosition(toNode),
+        preview: fromNode.available && !fromNode.completed,
+        reachable: fromNode.completed && toNode.available,
+        completed: fromNode.completed && toNode.completed,
+      }));
+  });
+}
+
+function MapRoutes({ connections }: { connections: ReturnType<typeof getRouteConnections> }) {
+  return (
+    <svg className="route-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <pattern id="routeLineTexture" patternUnits="userSpaceOnUse" width="14" height="4">
+          <image href="/ui/route-lines/pink-route.png" x="0" y="0" width="14" height="4" preserveAspectRatio="none" />
+        </pattern>
+      </defs>
+      {connections.map((connection) => (
+        <line
+          className={`route-line ${connection.preview ? 'preview' : ''} ${connection.reachable ? 'reachable' : ''} ${connection.completed ? 'completed' : ''}`}
+          key={connection.id}
+          stroke="url(#routeLineTexture)"
+          x1={connection.from.x}
+          y1={connection.from.y}
+          x2={connection.to.x}
+          y2={connection.to.y}
+        />
+      ))}
+    </svg>
   );
+}
+
+function MapNodeButton({ node, onEnter }: { node: MapNode; onEnter: (node: MapNode) => void }) {
+  const position = getNodePosition(node);
 
   return (
-    <div className="flow-screen">
-      <div className="screen-heading">
-        <p className="eyebrow">第{boss.bossTier}层路线规划</p>
-        <h2>选择下一站</h2>
-        <p>本层Boss已预告。已完成节点会锁定路线，只能进入亮起的相邻节点。</p>
+    <button
+      className={`map-node node-${node.type} ${node.completed ? 'completed' : ''} ${node.available ? 'available' : ''}`}
+      disabled={!node.available || node.completed}
+      onClick={() => onEnter(node)}
+      style={{ '--node-x': `${position.x}%`, '--node-y': `${position.y}%` } as CSSProperties}
+      type="button"
+    >
+      <span className="node-orb"><img className="node-icon-art" src={NODE_ICON_SRC[node.type]} alt="" /></span>
+      <span className="node-title">{node.type === 'battle' && node.row === 0 ? '起始战斗' : NODE_LABELS[node.type]}</span>
+      <small>{node.completed ? '已完成' : node.available ? '可进入' : NODE_HELP[node.type]}</small>
+    </button>
+  );
+}
+
+function TeamDock({ team }: { team: Character[] }) {
+  const slots = Array.from({ length: 4 }, (_, index) => team[index] ?? null);
+
+  return (
+    <section className="hud-card team-dock">
+      <div className="hud-card-heading">
+        <h3>当前队伍</h3>
+        <span>{team.length}/4</span>
       </div>
-      <BossForecast boss={boss} />
-      <div className="map-board">
-        {rows.map((row) => (
-          <div className="map-row" key={row.row}>
-            {row.nodes.map((node) => (
-              <button
-                className={`map-node node-${node.type}`}
-                disabled={!node.available || node.completed}
-                key={node.id}
-                onClick={() => onEnter(node)}
-              >
-                <span>{NODE_LABELS[node.type]}</span>
-                <small>{node.completed ? '已完成' : node.available ? '可进入' : '未连接'}</small>
-              </button>
-            ))}
+      <div className="team-dock-grid">
+        {slots.map((member, index) =>
+          member ? (
+            <div className={`team-dock-member rarity-${member.rarity}`} key={member.id}>
+              <Avatar character={member} label={member.name} />
+              <strong>{member.name}</strong>
+              <span>
+                HP {member.hp}/{member.maxHp}
+              </span>
+            </div>
+          ) : (
+            <div className="team-empty-slot" key={`empty-${index}`}>
+              <span>＋</span>
+              招募位空缺
+            </div>
+          ),
+        )}
+      </div>
+      <button className="hud-wide-button" type="button">查看角色</button>
+    </section>
+  );
+}
+
+function BondProgressDock({ team }: { team: Character[] }) {
+  const primaryBonds = getActiveBonds(team);
+  const secondaryBonds = getActiveSecondaryBonds(team).filter((bond) => bond.count > 0);
+  const visibleBonds = [
+    ...primaryBonds.slice(0, 4).map((bond) => ({
+      id: bond.group.id,
+      name: bond.group.name,
+      count: bond.count,
+      total: 3,
+      active: bond.level > 0,
+      secondary: false,
+      logoSrc: BOND_LOGO_SRC[bond.group.id],
+    })),
+    ...secondaryBonds.slice(0, 2).map((bond) => ({
+      id: bond.bond.id,
+      name: bond.bond.name,
+      count: bond.count,
+      total: 2,
+      active: bond.active,
+      secondary: true,
+      logoSrc: BOND_LOGO_SRC[bond.bond.id],
+    })),
+  ].slice(0, 5);
+
+  return (
+    <section className="hud-card bond-progress-dock">
+      <div className="hud-card-heading">
+        <h3>羁绊进度</h3>
+        <span>i</span>
+      </div>
+      <div className="bond-progress-list">
+        {visibleBonds.map((bond) => (
+          <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''}`} key={bond.id}>
+            <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
+            <strong>{bond.name}</strong>
+            <div className="bond-track">
+              <span style={{ width: `${Math.min(100, (bond.count / bond.total) * 100)}%` }} />
+            </div>
+            <em>{bond.active ? '已激活' : `${bond.count}/${bond.total}`}</em>
           </div>
         ))}
+      </div>
+      <button className="hud-wide-button" type="button">查看所有羁绊</button>
+    </section>
+  );
+}
+
+function MapLegend() {
+  const entries: MapNode['type'][] = ['battle', 'elite', 'shop', 'rest', 'boss'];
+
+  return (
+    <aside className="map-legend">
+      <h3>节点说明</h3>
+      {entries.map((type) => (
+        <div className={`legend-row node-${type}`} key={type}>
+          <span><img className="legend-icon-art" src={NODE_ICON_SRC[type]} alt="" /></span>
+          <div>
+            <strong>{NODE_LABELS[type]}</strong>
+            <small>{NODE_HELP[type]}</small>
+          </div>
+        </div>
+      ))}
+    </aside>
+  );
+}
+
+function MapActions() {
+  return (
+    <aside className="map-actions">
+      <button type="button">
+        <span>▣</span>
+        成就
+      </button>
+      <button type="button">
+        <span>☷</span>
+        事件日志
+      </button>
+    </aside>
+  );
+}
+
+function MapScreen({ nodes, boss, team, gold, musicMuted, onToggleMusic, onEnter }: MapScreenProps) {
+  const routeConnections = useMemo(() => getRouteConnections(nodes), [nodes]);
+  const livingHp = team.reduce((sum, member) => sum + Math.max(0, member.hp), 0);
+  const maxHp = team.reduce((sum, member) => sum + member.maxHp, 0);
+
+  return (
+    <div className="map-hud-screen">
+      <header className="map-hud-topbar">
+        <button className="map-back-button" type="button" aria-label="返回">‹</button>
+        <h2>第{boss.bossTier}层</h2>
+        <div className="map-resource-row">
+          <span className="resource-pill coin">◎ {gold}</span>
+          <span className="resource-pill heart">♥ {livingHp}/{maxHp || 0}</span>
+          <button className="settings-button" type="button" aria-label="设置">⚙</button>
+        </div>
+      </header>
+
+      <BossForecast boss={boss} />
+
+      <div className="map-stage">
+        <MapLegend />
+        <div className="map-board">
+          <MapRoutes connections={routeConnections} />
+          {nodes.map((node) => (
+            <MapNodeButton key={node.id} node={node} onEnter={onEnter} />
+          ))}
+        </div>
+        <MapActions />
+      </div>
+
+      <div className="map-bottom-dock">
+        <TeamDock team={team} />
+        <BondProgressDock team={team} />
+      </div>
+    </div>
+  );
+}
+interface BattleScreenProps {
+  battle: BattleState;
+  boss: BossTemplate;
+  gold: number;
+  team: Character[];
+  onContinue: () => void;
+  onToggleSelection: (id: string) => void;
+  pendingEnhance: RunState['pendingEnhance'];
+  pendingBossVictory: boolean;
+  onStart: () => void;
+  onEnhance: (id: string | null) => void;
+  onDismissEnhancement: () => void;
+  onBossBack: () => void;
+  onBossBlessing: () => void;
+}
+
+function hpPercent(character: Pick<Character, 'hp' | 'maxHp'>) {
+  return `${Math.max(0, Math.min(100, Math.round((character.hp / character.maxHp) * 100)))}%`;
+}
+
+function BattleUnitCard({ character, defeated = false }: { character: Character; defeated?: boolean }) {
+  return (
+    <div className={`battle-unit-card rarity-${character.rarity} ${defeated || character.hp <= 0 ? 'defeated' : ''}`}>
+      <Avatar character={character} label={character.name.replace('敌方', '').replace('Boss ', '').replace('精英 ', '')} />
+      <div className="battle-unit-copy">
+        <div className="battle-unit-title">
+          <strong>{character.name}</strong>
+          {character.rarity !== 'enemy' && character.rarity !== 'elite' && character.rarity !== 'boss' && <UpgradeLevelBadge level={character.upgradeLevel ?? 1} />}
+          <span>{RARITY_LABELS[character.rarity]}</span>
+        </div>
+        <div className="battle-hp-line">
+          <b>HP {character.hp}/{character.maxHp}</b>
+          <div className="battle-hp-track"><span style={{ width: hpPercent(character) }} /></div>
+        </div>
+        <small>攻击 {character.attack}　速度 {character.speed}</small>
+        {character.passive && <small>被动：{character.passive.description}</small>}
+        {character.skill && <small>技能：{character.skill.description}</small>}
       </div>
     </div>
   );
 }
 
-interface BattleScreenProps {
-  battle: BattleState;
-  team: Character[];
-  onToggleSelection: (id: string) => void;
-  onStart: () => void;
+function BattleTeamPanel({ team }: { team: Character[] }) {
+  return (
+    <aside className="battle-left-panel">
+      <section className="battle-card-panel">
+        <h3>队伍</h3>
+        <div className="battle-team-list">
+          {team.map((member) => (
+            <CompactCharacter key={member.id} character={member} />
+          ))}
+        </div>
+      </section>
+      <section className="battle-card-panel">
+        <h3>羁绊</h3>
+        <BondPanel team={team} />
+      </section>
+    </aside>
+  );
 }
 
-function BattleScreen({ battle, team, onToggleSelection, onStart }: BattleScreenProps) {
-  const aliveMembers = team.filter((member) => !member.injured && member.hp > 0);
-  const activeEnemy = battle.enemies[battle.activeEnemyIndex];
+function BattleSlotStrip({ selectedMembers, slots }: { selectedMembers: Character[]; slots: number }) {
+  const slotItems = Array.from({ length: slots }, (_, index) => selectedMembers[index] ?? null);
 
   return (
-    <div className="flow-screen battle-screen">
-      <div className="screen-heading">
-        <p className="eyebrow">{NODE_LABELS[battle.type]}</p>
-        <h2>{battle.type === 'boss' ? '3v1 Boss战' : battle.type === 'elite' ? '2v1 精英战' : '1v1 普通战斗'}</h2>
-        <p>所选角色会同时出战。敌人生命会保留，角色重伤后必须在休息处复活。</p>
-      </div>
-
-      <div className="battle-columns">
-        <div>
-          <h3>敌人</h3>
-          <div className="character-grid compact-grid">
-            {battle.enemies.map((enemy, index) => (
-              <CharacterCard
-                key={enemy.id}
-                character={enemy}
-                selected={index === battle.activeEnemyIndex && battle.phase !== 'won'}
-                disabled={enemy.hp <= 0}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          {(battle.phase === 'select' || battle.phase === 'relay') && (
+    <section className="battle-slot-strip" aria-label="出战位">
+      {slotItems.map((member, index) => (
+        <div className={`battle-slot ${member ? 'filled' : ''}`} key={member?.id ?? `slot-${index}`}>
+          {member ? (
             <>
-              <h3>
-                {battle.phase === 'relay' ? '接力出战' : '选择出战角色'} {battle.selectedIds.length}/{battle.slots}
-              </h3>
-              {battle.phase === 'relay' && activeEnemy && (
-                <div className="relay-note">
-                  {activeEnemy.name} 剩余 {activeEnemy.hp}/{activeEnemy.maxHp} HP。
-                </div>
-              )}
-              <div className="character-grid compact-grid">
-                {(battle.phase === 'relay' ? aliveMembers : team).map((member) => (
+              <Avatar character={member} label={member.name} />
+              <strong>{member.name}</strong>
+              <span>{member.hp}/{member.maxHp} HP</span>
+            </>
+          ) : (
+            <>
+              <b>＋</b>
+              <strong>出战位</strong>
+              <span>空缺</span>
+            </>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+function BossContinueModal({ tier, onBack, onBlessing }: { tier: BossTier; onBack: () => void; onBlessing: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="reward-modal boss-victory-modal">
+        <p className="eyebrow">Boss胜利</p>
+        <h3>胜利！解锁第{tier + 1}层！</h3>
+        <p>可以先返回查看战斗结果，也可以进入祝福处开启下一层前的回复。</p>
+        <div className="action-row">
+          <button className="secondary-button" onClick={onBack}>返回</button>
+          <button className="primary-button" onClick={onBlessing}>进入祝福处</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BattleScreen({ battle, boss, gold, team, pendingEnhance, pendingBossVictory, onContinue, onToggleSelection, onStart, onEnhance, onDismissEnhancement, onBossBack, onBossBlessing }: BattleScreenProps) {
+  const aliveMembers = team.filter((member) => !member.injured && member.hp > 0);
+  const displayEnemy = battle.enemies[Math.min(battle.activeEnemyIndex, battle.enemies.length - 1)] ?? null;
+  const selectableMembers = battle.phase === 'relay' ? aliveMembers : team;
+  const selectedMembers = team.filter((member) => battle.selectedIds.includes(member.id));
+  const battleTitle = battle.type === 'boss' ? '3v1 Boss战' : battle.type === 'elite' ? '2v1 精英战' : '1v1 普通战斗';
+  const canStart = (battle.phase === 'select' || battle.phase === 'relay') && battle.selectedIds.length === battle.slots;
+  const isWon = battle.phase === 'won';
+  const isBossWon = isWon && battle.type === 'boss' && boss.bossTier < 3;
+  const canContinueRoute = isWon && !isBossWon && !pendingEnhance;
+
+  return (
+    <div className="battle-hud-screen">
+      <header className="battle-hud-header">
+        <div>
+          <p className="eyebrow">{NODE_LABELS[battle.type]}</p>
+          <h2>{battleTitle}</h2>
+          <p>所选角色会同时出战，敌人会攻击所有出战角色。</p>
+        </div>
+        <div className="battle-resource-pills">
+          <span>◎ 金币 {gold}</span>
+          <span>伙伴 {team.length}</span>
+          <span>可出战 {aliveMembers.length}</span>
+        </div>
+      </header>
+
+      <div className="battle-hud-grid">
+        <BattleTeamPanel team={team} />
+
+        <main className="battle-center-panel">
+          <section className="battle-card-panel battle-enemy-stage">
+            <h3>敌人</h3>
+            {displayEnemy && <BattleUnitCard character={displayEnemy} defeated={displayEnemy.hp <= 0 || isWon} />}
+          </section>
+
+          <section className="battle-card-panel battle-selection-stage">
+            <div className="battle-section-heading">
+              <h3>{battle.phase === 'relay' ? '接力出战' : isWon ? '战斗结果' : '选择出战角色'} {battle.selectedIds.length}/{battle.slots}</h3>
+              {battle.phase === 'relay' && displayEnemy && <span>{displayEnemy.name} 剩余 {displayEnemy.hp}/{displayEnemy.maxHp} HP</span>}
+            </div>
+
+            <BattleSlotStrip selectedMembers={selectedMembers} slots={battle.slots} />
+
+            {(battle.phase === 'select' || battle.phase === 'relay') && (
+              <div className="battle-candidate-grid">
+                {selectableMembers.map((member) => (
                   <CharacterCard
                     key={member.id}
                     character={member}
@@ -996,23 +1695,51 @@ function BattleScreen({ battle, team, onToggleSelection, onStart }: BattleScreen
                   />
                 ))}
               </div>
-              <button
-                className="primary-button wide-button"
-                disabled={battle.selectedIds.length !== battle.slots}
-                onClick={onStart}
-              >
+            )}
+
+            {isWon && (
+              <div className="battle-result-banner">
+                <strong>战斗胜利</strong>
+                <span>敌方生命已归零，我方保留战后生命值。</span>
+              </div>
+            )}
+          </section>
+
+          <div className="battle-bottom-actions">
+            {(battle.phase === 'select' || battle.phase === 'relay') && (
+              <button className="primary-button battle-start-button" disabled={!canStart} onClick={onStart}>
                 {battle.phase === 'relay' ? '开始接力战斗' : '开始自动战斗'}
               </button>
-            </>
-          )}
-        </div>
+            )}
+            {canContinueRoute && (
+              <button className="primary-button battle-start-button" onClick={onContinue}>继续路线</button>
+            )}
+            {isBossWon && !pendingEnhance && !pendingBossVictory && (
+              <button className="primary-button battle-start-button" onClick={onBossBlessing}>进入祝福处</button>
+            )}
+          </div>
+        </main>
+
+        <aside className="battle-right-panel">
+          <BattleLog entries={battle.log} />
+        </aside>
       </div>
 
-      <BattleLog entries={battle.log} />
+      {pendingEnhance && (
+        <EnhanceModal
+          gold={gold}
+          pending={pendingEnhance}
+          team={team}
+          onEnhance={onEnhance}
+          onDismiss={onDismissEnhancement}
+        />
+      )}
+      {pendingBossVictory && isBossWon && (
+        <BossContinueModal tier={boss.bossTier} onBack={onBossBack} onBlessing={onBossBlessing} />
+      )}
     </div>
   );
 }
-
 interface ShopScreenProps {
   gold: number;
   offers: CharacterTemplate[];
@@ -1052,6 +1779,96 @@ function ShopScreen({ gold, offers, onBuy, onLeave }: ShopScreenProps) {
   );
 }
 
+interface BlessingScreenProps {
+  team: Character[];
+  tier: BossTier;
+  onContinue: () => void;
+}
+
+function BlessingScreen({ team, tier, onContinue }: BlessingScreenProps) {
+  return (
+    <div className="flow-screen blessing-screen modal-like-screen">
+      <div className="reward-modal blessing-modal-inline">
+        <p className="eyebrow">祝福处</p>
+        <h2>祝福处</h2>
+        <p>所有偶像复活，并且回复生命值。低于50%生命的偶像会恢复到自身生命值的50%。</p>
+        <div className="character-grid compact-grid">
+          {team.map((member) => (
+            <CompactCharacter key={member.id} character={member} />
+          ))}
+        </div>
+        <button className="primary-button wide-button" onClick={onContinue}>
+          进入第{tier}层
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface EnhanceModalProps {
+  gold: number;
+  pending: { source: 'elite' | 'boss'; cost: number; free: boolean };
+  team: Character[];
+  onEnhance: (id: string | null) => void;
+  onDismiss: () => void;
+}
+
+function EnhanceModal({ gold, pending, team, onEnhance, onDismiss }: EnhanceModalProps) {
+  const candidates = team.filter((member) => !member.injured && member.hp > 0 && (member.upgradeLevel ?? 1) < maxUpgradeLevel(member.rarity));
+  const canPay = pending.free || gold >= pending.cost;
+  const [selectedId, setSelectedId] = useState(candidates[0]?.id ?? null);
+  const selected = candidates.find((member) => member.id === selectedId) ?? null;
+  const sourceLabel = pending.source === 'boss' ? 'Boss胜利强化' : '精英胜利强化';
+  const costLabel = pending.free ? '免费' : `${pending.cost}金币`;
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="reward-modal enhance-modal">
+        <p className="eyebrow">强化系统</p>
+        <h3>{sourceLabel}</h3>
+        <p>选择一名偶像强化。白卡最多2星，紫卡和橙卡最多3星。本次费用：{costLabel}。</p>
+        <div className="enhance-modal-grid">
+          {candidates.map((member) => {
+            const level = member.upgradeLevel ?? 1;
+            const max = maxUpgradeLevel(member.rarity);
+            const nextLevel = Math.min(max, level + 1);
+            return (
+              <button
+                className={`enhance-choice rarity-${member.rarity} ${selectedId === member.id ? 'selected' : ''}`}
+                disabled={!canPay}
+                key={member.id}
+                onClick={() => setSelectedId(member.id)}
+                type="button"
+              >
+                <Avatar character={member} label={member.name} />
+                <div>
+                  <strong>{member.name}</strong>
+                  <UpgradeLevelBadge level={level} />
+                  <small>悬浮查看强化效果</small>
+                </div>
+                <div className="upgrade-tooltip">
+                  <b>当前效果</b>
+                  {getUpgradeEffectLines(member.templateId, level).map((line) => <span key={`current-${line}`}>{line}</span>)}
+                  <b>升级后</b>
+                  {getUpgradeEffectLines(member.templateId, nextLevel).map((line) => <span key={`next-${line}`}>{line}</span>)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {candidates.length === 0 && <div className="empty-state">当前没有可强化的偶像。</div>}
+        {!canPay && <div className="empty-state">金币不足，无法强化。</div>}
+        <div className="action-row">
+          <button className="secondary-button" onClick={onDismiss}>返回游戏</button>
+          <button className="primary-button" disabled={!selected || !canPay} onClick={() => onEnhance(selected?.id ?? null)}>
+            确认强化
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface RestScreenProps {
   gold: number;
   team: Character[];
@@ -1064,7 +1881,7 @@ interface RestScreenProps {
 
 function RestScreen({ gold, team, healUsed, reviveUsed, onHeal, onRevive, onLeave }: RestScreenProps) {
   const smallHealAmount = HEAL_OPTIONS.small.amount;
-  const largeHealAmount = HEAL_OPTIONS.large.amount;
+  const largeHealText = '恢复至满血';
 
   return (
     <div className="flow-screen">
@@ -1095,7 +1912,7 @@ function RestScreen({ gold, team, healUsed, reviveUsed, onHeal, onRevive, onLeav
                 disabled={healUsed || member.injured || member.hp >= member.maxHp || gold < HEAL_OPTIONS.large.cost}
                 onClick={() => onHeal(member.id, 'large')}
               >
-                大治疗 {HEAL_OPTIONS.large.cost}金币 / {largeHealAmount}HP
+                大治疗 {HEAL_OPTIONS.large.cost}金币 / {largeHealText}
               </button>
               <button
                 className="secondary-button"
@@ -1236,6 +2053,8 @@ function CharacterCard({ character, selected = false, disabled = false, onClick 
         : character.enemyTier === 'strong'
           ? '强怪'
           : GROUP_LABELS[character.group];
+  const level = character.upgradeLevel ?? 1;
+  const upgradeLines = getUpgradeEffectLines(character.templateId, level);
 
   return (
     <button
@@ -1262,14 +2081,20 @@ function CharacterCard({ character, selected = false, disabled = false, onClick 
             {character.shieldGainReduced ? '护盾削弱 ' : ''}
           </span>
         )}
-        {character.passive && (
-          <small>
-            被动「{character.passive.name}」：{character.passive.description}
-          </small>
+        {upgradeLines.length > 0 ? (
+          upgradeLines.map((line) => <small key={line}>{line}</small>)
+        ) : (
+          <>
+            {character.passive && (
+              <small>
+                被动「{character.passive.name}」：{character.passive.description}
+              </small>
+            )}
+            <small>
+              技能「{character.skill.name}」：{character.skill.description}
+            </small>
+          </>
         )}
-        <small>
-          技能「{character.skill.name}」：{character.skill.description}
-        </small>
         {character.feature && <small>定位：{character.feature}</small>}
         {character.mechanic && <small>终极机制：{character.mechanic}</small>}
         {character.injured && <em>重伤</em>}
@@ -1286,7 +2111,10 @@ function CompactCharacter({ character }: { character: Character }) {
       <Avatar character={character} label={character.name} small />
       <div className="compact-copy">
         <div>
-          <strong>{character.name}</strong>
+          <div className="character-name-line compact">
+            <strong>{character.name}</strong>
+            {character.rarity !== 'enemy' && character.rarity !== 'elite' && character.rarity !== 'boss' && <UpgradeLevelBadge level={character.upgradeLevel ?? 1} />}
+          </div>
           <span>{RARITY_LABELS[character.rarity]} · {GROUP_LABELS[character.group]} · {character.injured ? '重伤' : `${character.hp}/${character.maxHp} HP`}</span>
         </div>
         <div className="hp-track" aria-label={`${character.name}生命值`}>
@@ -1298,7 +2126,7 @@ function CompactCharacter({ character }: { character: Character }) {
 }
 
 function BattleLog({ entries }: { entries: string[] }) {
-  const visibleEntries = entries.slice(-18);
+  const visibleEntries = entries;
 
   return (
     <div className="battle-log" aria-live="polite">

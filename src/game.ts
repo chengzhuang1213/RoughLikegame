@@ -3,6 +3,7 @@ export type IdolRarity = 'legendary' | 'star' | 'normal' | 'enemy' | 'elite' | '
 export type BossTier = 1 | 2 | 3;
 export type EliteTier = BossTier;
 export type EnemyPoolId = 'weak' | 'strong';
+export type UpgradeLevel = 1 | 2 | 3;
 
 export type SecondaryBondId =
   | 'little_devil'
@@ -23,6 +24,8 @@ export type PassiveId =
   | 'mari_shiny'
   | 'yoshiko_power'
   | 'kanata_nap'
+  | 'ren_extra_hp'
+  | 'nozomi_turn_shield'
   | 'elite_kanan_training'
   | 'elite_riko_inspiration'
   | 'elite_umi_low_hp'
@@ -46,7 +49,7 @@ export type PassiveId =
   | 'boss_honoka_growth'
   | 'boss_chika_regen'
   | 'boss_dia_reduction'
-  | 'boss_kasumi_first_strike'
+  | 'boss_kasumi_stage_growth'
   | 'boss_chisato_double'
   | 'boss_maki_growth';
 
@@ -59,7 +62,6 @@ export type SkillId =
   | 'you_vulnerable'
   | 'eli_discipline'
   | 'mari_shield'
-  | 'ren_analysis'
   | 'yoshiko_poison'
   | 'nozomi_fortune'
   | 'kanata_execute'
@@ -67,7 +69,7 @@ export type SkillId =
   | 'boss_honoka_rush'
   | 'boss_chika_together'
   | 'boss_dia_authority'
-  | 'boss_kasumi_punch'
+  | 'boss_kasumi_cutest'
   | 'boss_chisato_training'
   | 'boss_maki_passion';
 
@@ -119,6 +121,7 @@ export interface Character {
   poison: number;
   vulnerable: number;
   statusImmune: boolean;
+  vulnerableMultiplier: number;
   battleAttackBonus: number;
   battleSpeedBonus: number;
   shieldGainReduced: boolean;
@@ -127,6 +130,8 @@ export interface Character {
   enemyTier?: EnemyPoolId;
   feature?: string;
   mechanic?: string;
+  upgradeLevel: UpgradeLevel;
+  battleMaxHpBonus: number;
 }
 
 export type NodeType = 'battle' | 'elite' | 'shop' | 'rest' | 'boss';
@@ -144,7 +149,7 @@ export interface MapNode {
 export interface RuntimeFlags {
   prepared?: boolean;
   firstAttackUsed?: boolean;
-  firstDamageDoubleUsed?: boolean;
+  greyFirstDamageBoostUsed?: boolean;
   firstLeaderDoubleUsed?: boolean;
   firstCritBoostUsed?: boolean;
   kekeCharged?: boolean;
@@ -159,6 +164,10 @@ export interface RuntimeFlags {
   forceCritical?: boolean;
   firstAttackBoostUsed?: boolean;
   firstDamageHalved?: boolean;
+  kasumiStageStacks?: number;
+  nextAttackMultiplier?: number;
+  bossFatalGuardUsed?: boolean;
+  ayumuHealBonus?: number;
 }
 
 export type RuntimeState = Record<string, RuntimeFlags>;
@@ -224,10 +233,10 @@ export interface ActiveSecondaryBond {
 }
 
 export const GROUP_LABELS: Record<GroupId, string> = {
-  cute: '可爱组',
-  silver: '灰发组',
-  president: '会长组',
-  mystery: '神秘组',
+  cute: '可爱甜心',
+  silver: '古灵精怪',
+  president: '风纪委员',
+  mystery: '命运之子',
 };
 
 
@@ -249,7 +258,7 @@ const ENEMY_BASIC_SKILL: Ability<SkillId> = {
 export const BOND_GROUPS: BondGroup[] = [
   {
     id: 'cute',
-    name: '可爱组',
+    name: '可爱甜心',
     theme: '暴击 / 连击 / 吸血',
     memberIds: ['ayumu', 'rina', 'nico'],
     level2Name: '萌力扩散',
@@ -259,17 +268,17 @@ export const BOND_GROUPS: BondGroup[] = [
   },
   {
     id: 'silver',
-    name: '灰发组',
-    theme: '速度 / 偷袭 / 易损',
-    memberIds: ['kotori', 'keke', 'you'],
-    level2Name: '行动派',
-    level2Description: '速度+3。',
-    level3Name: '青春冲刺',
-    level3Description: '首回合伤害翻倍。',
+    name: '古灵精怪',
+    theme: '灰毛 / 首次伤害 / 爆发',
+    memberIds: ['keke', 'kotori', 'you'],
+    level2Name: '灰毛共振',
+    level2Description: '灰毛成员首次造成伤害时，伤害提高25%。',
+    level3Name: '灵感全开',
+    level3Description: '灰毛成员首次造成伤害时，伤害提高50%。',
   },
   {
     id: 'president',
-    name: '会长组',
+    name: '风纪委员',
     theme: '护盾 / 免疫 / 防御',
     memberIds: ['eli', 'mari', 'ren'],
     level2Name: '纪律委员会',
@@ -279,20 +288,20 @@ export const BOND_GROUPS: BondGroup[] = [
   },
   {
     id: 'mystery',
-    name: '神秘组',
-    theme: '毒 / 随机 / 斩杀',
-    memberIds: ['yoshiko', 'nozomi', 'kanata'],
-    level2Name: '神秘共鸣',
-    level2Description: '毒伤害+100%。',
-    level3Name: '命运终结',
-    level3Description: '斩杀线提升至50%。',
+    name: '命运之子',
+    theme: '生命 / 梦境 / 共鸣',
+    memberIds: ['kanata', 'yoshiko', 'nozomi'],
+    level2Name: '梦境共鸣',
+    level2Description: '全队生命值上限+10。',
+    level3Name: '命运共鸣',
+    level3Description: '全队生命值上限+20。',
   },
 ];
 
 export const SECONDARY_BONDS: SecondaryBond[] = [
   {
     id: 'little_devil',
-    name: '小恶魔组',
+    name: '小恶魔',
     memberIds: ['nico', 'yoshiko'],
     description: '暴击时附加5层毒。',
   },
@@ -304,13 +313,13 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
   },
   {
     id: 'angel',
-    name: '天使组',
+    name: '天使',
     memberIds: ['ayumu', 'kotori'],
     description: '战斗结束恢复15%生命。',
   },
   {
     id: 'dreamer',
-    name: '梦想家组',
+    name: '梦想家',
     memberIds: ['keke', 'kanata'],
     description: '每经过一个节点，可可与彼方均获得+1攻击、+1速度和+5最大生命。',
   },
@@ -343,13 +352,13 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
 export const CHARACTER_POOL: CharacterTemplate[] = [
   {
     id: 'ayumu',
-    name: '步梦',
+    name: '上原步梦',
     group: 'cute',
     rarity: 'star',
-    maxHp: 88,
-    attack: 12,
-    speed: 7,
-    price: 65,
+    maxHp: 45,
+    attack: 10,
+    speed: 6,
+    price: 120,
     color: '#ef6f82',
     accent: '#ffe5eb',
     avatar: '/cards/heroes/102Uehara-Ayumu-TgB2p1.png',
@@ -366,13 +375,13 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
   },
   {
     id: 'rina',
-    name: '璃奈',
+    name: '天王寺璃奈',
     group: 'cute',
     rarity: 'normal',
-    maxHp: 72,
-    attack: 10,
-    speed: 12,
-    price: 65,
+    maxHp: 60,
+    attack: 6,
+    speed: 5,
+    price: 80,
     color: '#8aa1b7',
     accent: '#ecf2ff',
     avatar: '/cards/heroes/97Tennoji-Rina-tZo8rZ.png',
@@ -385,16 +394,16 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
   },
   {
     id: 'nico',
-    name: '妮可',
+    name: '矢泽妮可',
     group: 'cute',
     rarity: 'legendary',
-    maxHp: 72,
-    attack: 11,
-    speed: 11,
-    price: 70,
+    maxHp: 28,
+    attack: 13,
+    speed: 10,
+    price: 160,
     color: '#d4579d',
     accent: '#ffe5f6',
-    avatar: '/cards/heroes/18Yazawa-Nico-agidhY.png',
+    avatar: '/cards/heroes/avatars/nico-legendary-avatar.png',
     passive: {
       id: 'nico_skill_growth',
       name: '世界第一偶像',
@@ -411,17 +420,17 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     name: '南小鸟',
     group: 'silver',
     rarity: 'star',
-    maxHp: 78,
+    maxHp: 40,
     attack: 10,
     speed: 9,
-    price: 60,
+    price: 120,
     color: '#60c4a6',
     accent: '#fff3a3',
     avatar: '/cards/heroes/9Minami-Kotori-06DzDA.png',
     passive: {
       id: 'kotori_shield_breaker',
       name: '白翼破盾',
-      description: '攻击击碎目标全部护盾，并使其后续获得的护盾量减半。',
+      description: '攻击击破目标全部护盾，并使其后续获得的护盾量减半。',
     },
     skill: {
       id: 'kotori_crit',
@@ -434,13 +443,13 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     name: '唐可可',
     group: 'silver',
     rarity: 'legendary',
-    maxHp: 70,
-    attack: 12,
-    speed: 12,
-    price: 70,
+    maxHp: 35,
+    attack: 14,
+    speed: 7,
+    price: 160,
     color: '#b8a48c',
     accent: '#fff0c2',
-    avatar: '/cards/heroes/119Tang-Keke-DsQVZW.png',
+    avatar: '/cards/heroes/avatars/keke-legendary-avatar.png',
     passive: {
       id: 'keke_inspiration',
       name: '灵感爆发',
@@ -457,10 +466,10 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     name: '渡边曜',
     group: 'silver',
     rarity: 'normal',
-    maxHp: 86,
-    attack: 13,
-    speed: 11,
-    price: 75,
+    maxHp: 55,
+    attack: 8,
+    speed: 7,
+    price: 80,
     color: '#4e9ad6',
     accent: '#e1f3ff',
     avatar: '/cards/heroes/17Watanabe-You-ohUDHk.png',
@@ -473,13 +482,13 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
   },
   {
     id: 'eli',
-    name: '绘里',
+    name: '绚濑绘里',
     group: 'president',
     rarity: 'star',
-    maxHp: 88,
-    attack: 14,
-    speed: 8,
-    price: 75,
+    maxHp: 50,
+    attack: 11,
+    speed: 12,
+    price: 120,
     color: '#2ca6c7',
     accent: '#d8f6ff',
     avatar: '/cards/heroes/1Ayase-Eli-MqG2az.png',
@@ -491,21 +500,20 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     skill: {
       id: 'eli_discipline',
       name: '纪律执行',
-      description: '受到伤害减少3。',
+      description: '冷却1回合。全体友方攻击力提升，持续本场战斗。',
     },
-  },
-  {
+  },  {
     id: 'mari',
-    name: '鞠莉',
+    name: '小原鞠莉',
     group: 'president',
     rarity: 'legendary',
-    maxHp: 92,
+    maxHp: 40,
     attack: 12,
-    speed: 7,
-    price: 70,
+    speed: 6,
+    price: 160,
     color: '#b965d8',
     accent: '#f3e2ff',
-    avatar: '/cards/heroes/11Ohara-Mari-npxzmE.png',
+    avatar: '/cards/heroes/avatars/mari-legendary-avatar.png',
     passive: {
       id: 'mari_shiny',
       name: 'Shiny！',
@@ -522,35 +530,35 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     name: '叶月恋',
     group: 'president',
     rarity: 'normal',
-    maxHp: 84,
-    attack: 11,
-    speed: 9,
-    price: 70,
+    maxHp: 100,
+    attack: 5,
+    speed: 4,
+    price: 80,
     color: '#234b83',
     accent: '#dbe8ff',
     avatar: '/cards/heroes/122Hazuki-Ren-vhPCUT.png',
-    passive: null,
-    skill: {
-      id: 'ren_analysis',
-      name: '冷静分析',
-      description: '免疫首次异常状态。',
+    passive: {
+      id: 'ren_extra_hp',
+      name: '端庄体魄',
+      description: '生命值额外+30，Lv2提升为额外+50。',
     },
+    skill: ENEMY_BASIC_SKILL,
   },
   {
     id: 'yoshiko',
-    name: '善子',
+    name: '津岛善子',
     group: 'mystery',
     rarity: 'star',
-    maxHp: 76,
-    attack: 13,
-    speed: 10,
-    price: 75,
+    maxHp: 35,
+    attack: 12,
+    speed: 8,
+    price: 120,
     color: '#35364a',
     accent: '#ff5b6e',
     avatar: '/cards/heroes/16Tsushima-Yoshiko-VytOHY.png',
     passive: {
       id: 'yoshiko_power',
-      name: '堕天使力量',
+      name: '堕天使力场',
       description: '敌方每拥有1层毒，自身攻击力+1。',
     },
     skill: {
@@ -561,35 +569,39 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
   },
   {
     id: 'nozomi',
-    name: '希',
+    name: '东条希',
     group: 'mystery',
     rarity: 'normal',
-    maxHp: 86,
-    attack: 11,
-    speed: 8,
-    price: 70,
+    maxHp: 65,
+    attack: 6,
+    speed: 4,
+    price: 80,
     color: '#7d5ab6',
     accent: '#efe2ff',
     avatar: '/cards/heroes/15Toujou-Nozomi-ToXNZh.png',
-    passive: null,
+    passive: {
+      id: 'nozomi_turn_shield',
+      name: '神秘守护',
+      description: '每回合开始获得3点护盾。',
+    },
     skill: {
       id: 'nozomi_fortune',
       name: '神秘占卜',
-      description: '开场随机获得攻击、速度或护盾强化。',
+      description: '给一名友方5点护盾，无法对自己使用。Lv2提升为8点。',
     },
   },
   {
     id: 'kanata',
-    name: '彼方',
+    name: '近江彼方',
     group: 'mystery',
     rarity: 'legendary',
-    maxHp: 90,
-    attack: 10,
-    speed: 6,
-    price: 70,
+    maxHp: 30,
+    attack: 13,
+    speed: 5,
+    price: 160,
     color: '#9d75b8',
     accent: '#fff0f7',
-    avatar: '/cards/heroes/50Konoe-Kanata-xB16n7.png',
+    avatar: '/cards/heroes/avatars/kanata-legendary-avatar.png',
     passive: {
       id: 'kanata_nap',
       name: '午睡时间',
@@ -598,11 +610,10 @@ export const CHARACTER_POOL: CharacterTemplate[] = [
     skill: {
       id: 'kanata_execute',
       name: '梦境终结',
-      description: '冷却1回合。敌方生命低于30%时立即斩杀。',
+      description: '冷却1回合。敌方生命低于20%时立即斩杀。',
     },
   },
 ];
-
 
 export const WEAK_ENEMY_TEMPLATES: EnemyTemplate[] = [
   {
@@ -1093,26 +1104,25 @@ export const BOSS_TEMPLATES: BossTemplate[] = [
     group: 'cute',
     rarity: 'boss',
     bossTier: 2,
-    maxHp: 180,
-    attack: 18,
-    speed: 9,
+    maxHp: 140,
+    attack: 10,
+    speed: 11,
     price: 0,
     color: '#d8c68e',
     accent: '#202020',
     avatar: '/cards/enemies/67Nakasu-Kasumi-M5ZCuB.png',
-    feature: '爆发型 Boss，首次攻击有极高秒人风险。',
+    feature: '成长型 Boss，每次行动后攻击力逐步提升。',
     passive: {
-      id: 'boss_kasumi_first_strike',
-      name: '霞霞最可爱',
-      description: '首次攻击造成双倍伤害。',
+      id: 'boss_kasumi_stage_growth',
+      name: '霞霞的主场',
+      description: '每次行动后攻击力+1，最多叠加5层。',
     },
     skill: {
-      id: 'boss_kasumi_punch',
-      name: '霞霞拳',
-      description: '冷却1回合。暴击率50%，暴击造成2倍伤害。',
+      id: 'boss_kasumi_cutest',
+      name: '霞霞最可爱！',
+      description: '冷却1回合。本次攻击额外造成50%伤害。',
     },
-  },
-  {
+  },  {
     id: 'boss_chisato',
     name: '岚千砂都',
     group: 'silver',
@@ -1402,10 +1412,20 @@ export const NODE_LABELS: Record<NodeType, string> = {
 };
 
 export const REWARD_GOLD: Record<BattleType, number> = {
-  battle: 30,
-  elite: 55,
-  boss: 120,
+  battle: 8,
+  elite: 35,
+  boss: 60,
 };
+
+const STRONG_ENEMY_IDS = new Set(STRONG_ENEMY_TEMPLATES.map((enemy) => enemy.id));
+
+export function getRewardGold(type: BattleType, enemies: Character[] = []): number {
+  if (type !== 'battle') {
+    return REWARD_GOLD[type];
+  }
+
+  return enemies.some((enemy) => STRONG_ENEMY_IDS.has(enemy.templateId)) ? 12 : REWARD_GOLD.battle;
+}
 
 export function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
@@ -1518,15 +1538,18 @@ function createCharacter(template: CharacterTemplate, id: string, overrides: Par
     shield: 0,
     poison: 0,
     vulnerable: 0,
+    vulnerableMultiplier: 2,
     statusImmune: false,
     battleAttackBonus: 0,
     battleSpeedBonus: 0,
     shieldGainReduced: false,
+    battleMaxHpBonus: 0,
     bossTier: template.bossTier,
     eliteTier: template.eliteTier,
     enemyTier: template.enemyTier,
     feature: template.feature,
     mechanic: template.mechanic,
+    upgradeLevel: 1,
     ...overrides,
   };
 }
@@ -1651,15 +1674,20 @@ export function copyCharacter(character: Character): Character {
 }
 
 function clearBattleOnlyState(character: Character): Character {
+  const restoredMaxHp = Math.max(1, character.maxHp - character.battleMaxHpBonus);
   return {
     ...character,
+    hp: Math.min(character.hp, restoredMaxHp),
+    maxHp: restoredMaxHp,
     shield: 0,
     poison: 0,
     vulnerable: 0,
+    vulnerableMultiplier: 2,
     statusImmune: false,
     battleAttackBonus: 0,
     battleSpeedBonus: 0,
     shieldGainReduced: false,
+    battleMaxHpBonus: 0,
   };
 }
 
@@ -1672,6 +1700,10 @@ function copyRuntime(runtime: RuntimeState): RuntimeState {
 function getFlags(runtime: RuntimeState, id: string): RuntimeFlags {
   runtime[id] ??= {};
   return runtime[id];
+}
+
+function upgradeLevel(character: Character): UpgradeLevel {
+  return character.upgradeLevel ?? 1;
 }
 
 function effectiveAttack(character: Character): number {
@@ -1733,9 +1765,10 @@ function applyPoison(target: Character, layers: number, log: string[]) {
   }, log);
 }
 
-function applyVulnerable(target: Character, log: string[]) {
+function applyVulnerable(target: Character, log: string[], multiplier = 2) {
   applyStatus(target, '易损', () => {
     target.vulnerable = Math.max(target.vulnerable, 1);
+    target.vulnerableMultiplier = Math.max(target.vulnerableMultiplier || 2, multiplier);
     log.push(`${target.name}陷入易损，下一次受到伤害翻倍。`);
   }, log);
 }
@@ -1773,11 +1806,6 @@ function prepareCombatant(
     }
   }
 
-  if (isAlly && hasBond(team, 'silver', 2)) {
-    actor.battleSpeedBonus += 3;
-    log.push(`${actor.name}受到「行动派」鼓舞，速度+3。`);
-  }
-
   if (isAlly && hasSecondaryBond(team, 'full_speed')) {
     actor.battleSpeedBonus += 3;
     log.push(`${actor.name}触发「全速模式」，速度+3。`);
@@ -1791,21 +1819,13 @@ function prepareCombatant(
     addShield(actor, Math.ceil(actor.maxHp * 0.15), log, '触发「绘希」');
   }
 
-  if (actor.skill.id === 'ren_analysis') {
-    actor.statusImmune = true;
-    log.push(`${actor.name}发动「${actor.skill.name}」，准备免疫首次异常状态。`);
-  }
-
-  if (actor.skill.id === 'nozomi_fortune') {
-    const roll = Math.floor(Math.random() * 3);
-    if (roll === 0) {
-      actor.battleAttackBonus += 3;
-      log.push(`${actor.name}发动「${actor.skill.name}」，攻击+3。`);
-    } else if (roll === 1) {
-      actor.battleSpeedBonus += 3;
-      log.push(`${actor.name}发动「${actor.skill.name}」，速度+3。`);
-    } else {
-      addShield(actor, 3, log, `发动「${actor.skill.name}」`);
+  if (isAlly) {
+    const mysteryHpBonus = hasBond(team, 'mystery', 3) ? 20 : hasBond(team, 'mystery', 2) ? 10 : 0;
+    if (mysteryHpBonus > 0 && actor.battleMaxHpBonus === 0) {
+      actor.maxHp += mysteryHpBonus;
+      actor.hp += mysteryHpBonus;
+      actor.battleMaxHpBonus = mysteryHpBonus;
+      log.push(`${actor.name}触发「命运之子」，生命值上限+${mysteryHpBonus}。`);
     }
   }
 }
@@ -1837,8 +1857,7 @@ function processPoison(
     return actor.hp <= 0;
   }
 
-  const multiplier = !isAllyTarget && hasBond(team, 'mystery', 2) ? 2 : 1;
-  const damage = actor.poison * multiplier;
+  const damage = actor.poison;
   actor.hp = Math.max(0, actor.hp - damage);
   log.push(`${actor.name}受到${damage}点毒伤害。`);
   actor.poison = Math.max(0, actor.poison - 1);
@@ -1860,7 +1879,7 @@ function tryExecute(
     return false;
   }
 
-  const threshold = isAlly && hasBond(team, 'mystery', 3) ? 0.5 : 0.3;
+  const threshold = upgradeLevel(attacker) >= 3 ? 0.35 : 0.3;
   if (defender.hp / defender.maxHp <= threshold) {
     defender.hp = 0;
     flags.skillCooldown = 1;
@@ -1874,9 +1893,6 @@ function tryExecute(
 
 function getDamageReduction(defender: Character, isAllyTarget: boolean, team: Character[]): number {
   let reduction = 0;
-  if (defender.skill.id === 'eli_discipline') {
-    reduction += 3;
-  }
 
   if (defender.passive?.id === 'boss_dia_reduction') {
     reduction += 3;
@@ -1916,7 +1932,7 @@ function calculateDamage(
     (attacker.skill.id === 'boss_honoka_rush' || attacker.skill.id === 'boss_maki_passion') &&
     (flags.skillCooldown ?? 0) <= 0;
   const kasumiSkillActive =
-    attacker.skill.id === 'boss_kasumi_punch' && (flags.skillCooldown ?? 0) <= 0;
+    attacker.skill.id === 'boss_kasumi_cutest' && (flags.skillCooldown ?? 0) <= 0;
 
   if (attacker.passive?.id === 'ayumu_low_hp' && attacker.hp / attacker.maxHp < 0.5) {
     damage *= 1.2;
@@ -1924,13 +1940,14 @@ function calculateDamage(
   }
 
   if (attacker.passive?.id === 'mari_shiny' && attacker.shield > 0) {
-    damage *= 1.5;
-    log.push(`${attacker.name}发动「${attacker.passive.name}」，本次伤害提升50%。`);
+    const multiplier = upgradeLevel(attacker) === 1 ? 1.5 : upgradeLevel(attacker) === 2 ? 2 : 2.5;
+    damage *= multiplier;
+    log.push(`${attacker.name}发动《${attacker.passive.name}》，拥有护盾时伤害提高${Math.round((multiplier - 1) * 100)}%。`);
   }
 
-  if (attacker.passive?.id === 'yoshiko_power' && defender.poison > 0) {
-    damage += defender.poison;
-    log.push(`${attacker.name}发动「${attacker.passive.name}」，根据毒层攻击力+${defender.poison}。`);
+  if (attacker.passive?.id === 'yoshiko_power' && defender.poison > 0 && upgradeLevel(attacker) >= 3) {
+    damage += 3;
+    log.push(`${attacker.name}发动《${attacker.passive.name}》，目标中毒时额外+3伤害。`);
   }
 
   if (attacker.passive?.id === 'elite_umi_low_hp' && attacker.hp / attacker.maxHp < 0.5) {
@@ -1967,26 +1984,28 @@ function calculateDamage(
     log.push(`${attacker.name}发动「${attacker.skill.name}」，本次攻击造成1.5倍伤害。`);
   }
 
-  if (attacker.passive?.id === 'keke_inspiration') {
-    const multiplier = 0.9 + Math.random() * 0.25;
-    damage *= multiplier;
-    log.push(`${attacker.name}发动「${attacker.passive.name}」，伤害倍率${multiplier.toFixed(2)}。`);
-  }
 
   if (attacker.skill.id === 'keke_charge' && flags.kekeCharged) {
     flags.kekeCharged = false;
     flags.kekeChargeCooldown = 1;
-    damage *= 1.3;
-    log.push(`${attacker.name}消耗「${attacker.skill.name}」，本次攻击1.30倍伤害。`);
+    damage *= 2;
+    log.push(`${attacker.name}消耗《${attacker.skill.name}》，本次攻击造成2倍伤害。`);
+  }
+
+  if (flags.nextAttackMultiplier) {
+    const multiplier = flags.nextAttackMultiplier;
+    flags.nextAttackMultiplier = undefined;
+    damage *= multiplier;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，本次攻击造成${multiplier}倍伤害。`);
   }
 
   if (kotoriCritSkillActive) {
-    criticalChance += 0.3;
+    criticalChance += upgradeLevel(attacker) >= 2 ? 0.5 : 0.3;
   }
 
   if (kasumiSkillActive) {
-    criticalChance += 0.5;
-    log.push(`${attacker.name}发动「${attacker.skill.name}」，本次攻击暴击率+50%。`);
+    damage *= 1.5;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，本次攻击伤害+50%。`);
   }
 
   if (flags.forceCritical) {
@@ -2015,27 +2034,28 @@ function calculateDamage(
     flags.skillCooldown = 1;
   }
 
-  if (attacker.passive?.id === 'boss_kasumi_first_strike' && !flags.bossFirstAttackUsed) {
-    flags.bossFirstAttackUsed = true;
-    damage *= 2;
-    log.push(`${attacker.name}发动「${attacker.passive.name}」，首次攻击伤害翻倍。`);
-  }
-
   if (isAllyAttacker && hasSecondaryBond(team, 'campus_leader') && !flags.firstLeaderDoubleUsed) {
     flags.firstLeaderDoubleUsed = true;
     damage *= 1.5;
     log.push(`${attacker.name}触发「校园领袖」，首次攻击造成1.5倍伤害。`);
   }
 
-  if (isAllyAttacker && hasBond(team, 'silver', 3) && !flags.firstDamageDoubleUsed) {
-    flags.firstDamageDoubleUsed = true;
-    damage *= 2;
-    log.push(`${attacker.name}触发「青春冲刺」，首回合伤害翻倍。`);
+  if (
+    isAllyAttacker &&
+    (attacker.templateId === 'keke' || attacker.templateId === 'kotori' || attacker.templateId === 'you') &&
+    hasBond(team, 'silver', 2) &&
+    !flags.greyFirstDamageBoostUsed
+  ) {
+    flags.greyFirstDamageBoostUsed = true;
+    const multiplier = hasBond(team, 'silver', 3) ? 1.5 : 1.25;
+    damage *= multiplier;
+    log.push(`${attacker.name}触发「古灵精怪」，首次造成伤害提高${Math.round((multiplier - 1) * 100)}%。`);
   }
 
   if (defender.vulnerable > 0) {
     defender.vulnerable -= 1;
-    damage *= 2;
+    damage *= defender.vulnerableMultiplier || 2;
+    defender.vulnerableMultiplier = 2;
     log.push(`${defender.name}的易损触发，本次伤害翻倍。`);
   }
 
@@ -2105,10 +2125,38 @@ function resolveAttack(
     log.push(`${defender.name}发动「${defender.passive.name}」，首次受到伤害减半。`);
   }
 
+  if (
+    damage > 0 &&
+    isAllyDefender &&
+    defender.templateId === 'kanata' &&
+    upgradeLevel(defender) >= 2 &&
+    attacker.bossTier &&
+    !defenderFlags.bossFatalGuardUsed
+  ) {
+    const hpDamage = Math.max(0, damage - defender.shield);
+    if (hpDamage >= defender.hp) {
+      defenderFlags.bossFatalGuardUsed = true;
+      defenderFlags.nextAttackMultiplier = 3;
+      damage = Math.max(0, defender.shield + defender.hp - 1);
+      log.push(`${defender.name}触发Lv2强化，Boss战首次致命伤保留1HP，下次攻击造成3倍伤害。`);
+    }
+  }
+
   const defenderDurabilityBefore = defender.hp + defender.shield;
   applyDamageToShieldAndHp(defender, damage);
   const actualDamage = Math.min(damage, defenderDurabilityBefore);
   log.push(`${attacker.name}攻击${defender.name}，造成${damage}伤害，${defender.name}剩余${defender.hp}HP。`);
+
+  if (actualDamage > 0 && attacker.skill.id === 'kotori_crit' && upgradeLevel(attacker) >= 3 && defender.hp > 0) {
+    defender.hp = Math.max(0, defender.hp - 10);
+    log.push(`${attacker.name}触发Lv3强化，额外造成10点真实伤害，${defender.name}剩余${defender.hp}HP。`);
+    tryBossEncore(defender, runtime, log);
+  }
+
+  if (actualDamage > 0 && attacker.skill.id === 'yoshiko_poison' && defender.hp > 0) {
+    log.push(`${attacker.name}触发Lv1强化，攻击附加1层毒。`);
+    applyPoison(defender, 1, log);
+  }
 
   if (attacker.passive?.id === 'keke_inspiration') {
     const restored = heal(attacker, Math.floor(actualDamage * 0.3));
@@ -2148,7 +2196,7 @@ function resolveAttack(
   }
 
   if (critical && actualDamage > 0 && isAllyAttacker && hasSecondaryBond(team, 'little_devil') && defender.hp > 0) {
-    log.push(`${attacker.name}触发「小恶魔组」，暴击附加5层毒。`);
+    log.push(`${attacker.name}触发「小恶魔」，暴击附加5层毒。`);
     applyPoison(defender, 5, log);
   }
 
@@ -2162,7 +2210,7 @@ function resolveAttack(
   if (attacker.skill.id === 'you_vulnerable' && !flags.firstAttackUsed && defender.hp > 0) {
     flags.firstAttackUsed = true;
     log.push(`${attacker.name}发动「${attacker.skill.name}」。`);
-    applyVulnerable(defender, log);
+    applyVulnerable(defender, log, upgradeLevel(attacker) >= 2 ? 2.5 : 2);
   }
 
   if (
@@ -2171,7 +2219,7 @@ function resolveAttack(
     defender.hp > 0
   ) {
     log.push(`${attacker.name}发动「${attacker.skill.name}」。`);
-    applyPoison(defender, 3, log);
+    applyPoison(defender, upgradeLevel(attacker) >= 2 ? 4 : 3, log);
     flags.skillCooldown = 1;
   }
 
@@ -2193,6 +2241,10 @@ function takeTurn(
   const flags = getFlags(runtime, attacker.id);
   const chargeCooldown = flags.kekeChargeCooldown ?? 0;
   const skillCooldown = flags.skillCooldown ?? 0;
+
+  if (attacker.passive?.id === 'nozomi_turn_shield') {
+    addShield(attacker, 3, log, `发动「${attacker.passive.name}」`);
+  }
 
   if (attacker.passive?.id === 'elite_kanan_training') {
     attacker.battleSpeedBonus += 1;
@@ -2225,14 +2277,23 @@ function takeTurn(
     log.push(`${attacker.name}发动「${attacker.passive.name}」，本场攻击力+1。`);
   }
 
-  if (attacker.skill.id === 'ayumu_musou') {
-    if (!flags.ayumuMusouActive) {
-      flags.ayumuMusouActive = true;
-      log.push(`${attacker.name}发动「${attacker.skill.name}」，之后每回合攻击力+3。`);
-    } else {
-      attacker.battleAttackBonus += 3;
-      log.push(`${attacker.name}受到「${attacker.skill.name}」强化，本场攻击力+3。`);
+  if (attacker.skill.id === 'ayumu_musou' && skillCooldown <= 0) {
+    const baseHeal = upgradeLevel(attacker) === 1 ? 5 : upgradeLevel(attacker) === 2 ? 10 : 15;
+    const bonus = flags.ayumuHealBonus ?? 0;
+    const amount = baseHeal + bonus;
+    let totalRestored = 0;
+    team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
+      totalRestored += heal(member, amount);
+      if (upgradeLevel(attacker) >= 3 && member.poison > 0) {
+        member.poison = 0;
+      }
+    });
+    if (totalRestored > 0) {
+      flags.ayumuHealBonus = bonus + 3;
     }
+    flags.skillCooldown = 1;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，全体友方恢复${amount}HP${upgradeLevel(attacker) >= 3 ? '并解除所有毒层' : ''}。`);
+    return;
   }
 
   if (attacker.passive?.id === 'boss_honoka_growth' || attacker.passive?.id === 'boss_maki_growth') {
@@ -2265,8 +2326,34 @@ function takeTurn(
     return;
   }
 
+  if (attacker.skill.id === 'nozomi_fortune' && skillCooldown <= 0) {
+    const shieldTarget = team
+      .filter((member) => member.id !== attacker.id && !member.injured && member.hp > 0)
+      .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0];
+    if (shieldTarget) {
+      const shieldAmount = upgradeLevel(attacker) >= 2 ? 8 : 5;
+      addShield(shieldTarget, shieldAmount, log, `发动「${attacker.skill.name}」`);
+      flags.skillCooldown = 1;
+      return;
+    }
+  }
+
+  if (attacker.skill.id === 'eli_discipline' && skillCooldown <= 0) {
+    const attackBonus = upgradeLevel(attacker) === 1 ? 2 : upgradeLevel(attacker) === 2 ? 3 : 4;
+    team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
+      member.battleAttackBonus += attackBonus;
+      if (upgradeLevel(attacker) >= 3) {
+        member.battleSpeedBonus += 2;
+      }
+    });
+    flags.skillCooldown = 1;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，全体友方攻击力+${attackBonus}${upgradeLevel(attacker) >= 3 ? '，速度+2' : ''}。`);
+    return;
+  }
+
   if (attacker.skill.id === 'mari_shield' && skillCooldown <= 0) {
-    addShield(attacker, 10, log, `发动「${attacker.skill.name}」`);
+    const shieldAmount = upgradeLevel(attacker) === 1 ? 10 : upgradeLevel(attacker) === 2 ? 15 : 20;
+    addShield(attacker, shieldAmount, log, `发动《${attacker.skill.name}》`);
     flags.skillCooldown = 1;
     return;
   }
@@ -2278,20 +2365,30 @@ function takeTurn(
     );
     attacker.hp -= hpLoss;
     if (attacker.passive?.id === 'nico_skill_growth') {
-      attacker.battleAttackBonus += 3;
-      log.push(`${attacker.name}发动「${attacker.passive.name}」，本场攻击力+3。`);
+      const attackBonus = upgradeLevel(attacker) >= 2 ? 4 : 3;
+      attacker.battleAttackBonus += attackBonus;
+      log.push(`${attacker.name}发动《${attacker.passive.name}》，本场攻击力+${attackBonus}。`);
     }
+    const hits = upgradeLevel(attacker) >= 3 ? 4 : 3;
     flags.skillCooldown = 1;
-    log.push(`${attacker.name}发动「${attacker.skill.name}」，失去${hpLoss}HP并连续攻击3次。`);
-    for (let hit = 0; hit < 3 && defender.hp > 0; hit += 1) {
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，失去${hpLoss}HP并连续攻击${hits}次。`);
+    for (let hit = 0; hit < hits && defender.hp > 0; hit += 1) {
       resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
     }
     return;
   }
 
-  if (attacker.skill.id === 'keke_charge' && !flags.kekeCharged && chargeCooldown <= 0) {
-    flags.kekeCharged = true;
-    log.push(`${attacker.name}发动「${attacker.skill.name}」，跳过本回合并进入蓄力。`);
+  if (attacker.skill.id === 'keke_charge' && !flags.kekeCharged && chargeCooldown <= 0 && skillCooldown <= 0) {
+    if (upgradeLevel(attacker) <= 1) {
+      flags.kekeCharged = true;
+      log.push(`${attacker.name}发动《${attacker.skill.name}》，本回合不攻击，下次攻击造成2倍伤害。`);
+      return;
+    }
+
+    flags.nextAttackMultiplier = upgradeLevel(attacker) >= 3 ? (Math.random() < 0.5 ? 3 : 4) : 2;
+    flags.skillCooldown = 1;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，立即进行强化攻击。`);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
     return;
   }
 
@@ -2318,10 +2415,21 @@ function takeTurn(
     attacker.hp > 0 &&
     defender.hp > 0 &&
     attacker.skill.id === 'rina_double' &&
-    Math.random() < 0.3
+    Math.random() < (upgradeLevel(attacker) >= 2 ? 0.5 : 0.3)
   ) {
+    if (upgradeLevel(attacker) >= 2) {
+      addShield(attacker, 10, log, '触发Lv2强化');
+    }
     log.push(`${attacker.name}发动「${attacker.skill.name}」，追加一次攻击。`);
     resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+  }
+  if (attacker.hp > 0 && attacker.passive?.id === 'boss_kasumi_stage_growth') {
+    const stacks = Math.min(5, flags.kasumiStageStacks ?? 0);
+    if (stacks < 5) {
+      flags.kasumiStageStacks = stacks + 1;
+      attacker.battleAttackBonus += 1;
+      log.push(`${attacker.name}发动《${attacker.passive.name}》，攻击力+1（${flags.kasumiStageStacks}/5）。`);
+    }
   }
 }
 
@@ -2378,9 +2486,16 @@ function runGroupBattle(
         break;
       }
       const livingAllies = allies.filter((ally) => ally.hp > 0);
-      const target = livingAllies[Math.floor(Math.random() * livingAllies.length)];
-      if (target) {
-        takeTurn(enemy, target, false, team, runtime, log);
+      const firstTarget = livingAllies[Math.floor(Math.random() * livingAllies.length)];
+      if (firstTarget) {
+        takeTurn(enemy, firstTarget, false, team, runtime, log);
+      }
+
+      for (const extraTarget of livingAllies) {
+        if (enemy.hp <= 0 || extraTarget.hp <= 0 || extraTarget.id === firstTarget?.id) {
+          continue;
+        }
+        resolveAttack(enemy, extraTarget, false, true, team, runtime, log);
       }
     }
   }
@@ -2414,7 +2529,7 @@ function applySecondaryVictoryEffects(team: Character[], log: string[]): number 
     aliveTeam.forEach((member) => {
       const restored = heal(member, Math.ceil(member.maxHp * 0.15));
       if (restored > 0) {
-        log.push(`${member.name}触发「天使组」，战后恢复${restored}HP。`);
+        log.push(`${member.name}触发「天使」，战后恢复${restored}HP。`);
       }
     });
   }
