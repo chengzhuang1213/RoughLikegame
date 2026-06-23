@@ -174,6 +174,16 @@ export type RuntimeState = Record<string, RuntimeFlags>;
 
 export type BattlePhase = 'select' | 'relay' | 'won' | 'lost';
 
+export interface CharacterBattleStats {
+  characterId: string;
+  name: string;
+  damageDealt: number;
+  damageTaken: number;
+  criticalHits: number;
+}
+
+export type BattleStats = Record<string, CharacterBattleStats>;
+
 export interface BattleState {
   nodeId: string;
   type: BattleType;
@@ -185,6 +195,7 @@ export interface BattleState {
   rewardGold: number;
   log: string[];
   runtime: RuntimeState;
+  stats: BattleStats;
 }
 
 export interface BondGroup {
@@ -1702,6 +1713,18 @@ function getFlags(runtime: RuntimeState, id: string): RuntimeFlags {
   return runtime[id];
 }
 
+function getBattleStat(stats: BattleStats, character: Character): CharacterBattleStats {
+  stats[character.id] ??= {
+    characterId: character.id,
+    name: character.name,
+    damageDealt: 0,
+    damageTaken: 0,
+    criticalHits: 0,
+  };
+
+  return stats[character.id];
+}
+
 function upgradeLevel(character: Character): UpgradeLevel {
   return character.upgradeLevel ?? 1;
 }
@@ -1873,6 +1896,7 @@ function tryExecute(
   team: Character[],
   runtime: RuntimeState,
   log: string[],
+  stats?: BattleStats,
 ): boolean {
   const flags = getFlags(runtime, attacker.id);
   if (attacker.skill.id !== 'kanata_execute' || defender.hp <= 0 || (flags.skillCooldown ?? 0) > 0) {
@@ -1881,7 +1905,11 @@ function tryExecute(
 
   const threshold = upgradeLevel(attacker) >= 3 ? 0.35 : 0.3;
   if (defender.hp / defender.maxHp <= threshold) {
+    const remainingHp = defender.hp;
     defender.hp = 0;
+    if (isAlly && stats && remainingHp > 0) {
+      getBattleStat(stats, attacker).damageDealt += remainingHp;
+    }
     flags.skillCooldown = 1;
     log.push(`${attacker.name}发动「${attacker.skill.name}」，直接斩杀${defender.name}。`);
     tryBossEncore(defender, runtime, log);
@@ -2087,8 +2115,9 @@ function resolveAttack(
   team: Character[],
   runtime: RuntimeState,
   log: string[],
+  stats: BattleStats,
 ) {
-  if (tryExecute(attacker, defender, isAllyAttacker, team, runtime, log)) {
+  if (tryExecute(attacker, defender, isAllyAttacker, team, runtime, log, stats)) {
     return;
   }
 
@@ -2145,6 +2174,16 @@ function resolveAttack(
   const defenderDurabilityBefore = defender.hp + defender.shield;
   applyDamageToShieldAndHp(defender, damage);
   const actualDamage = Math.min(damage, defenderDurabilityBefore);
+  if (actualDamage > 0 && isAllyAttacker) {
+    const attackerStats = getBattleStat(stats, attacker);
+    attackerStats.damageDealt += actualDamage;
+    if (critical) {
+      attackerStats.criticalHits += 1;
+    }
+  }
+  if (actualDamage > 0 && isAllyDefender) {
+    getBattleStat(stats, defender).damageTaken += actualDamage;
+  }
   log.push(`${attacker.name}攻击${defender.name}，造成${damage}伤害，${defender.name}剩余${defender.hp}HP。`);
 
   if (actualDamage > 0 && attacker.skill.id === 'kotori_crit' && upgradeLevel(attacker) >= 3 && defender.hp > 0) {
@@ -2223,7 +2262,7 @@ function resolveAttack(
     flags.skillCooldown = 1;
   }
 
-  tryExecute(attacker, defender, isAllyAttacker, team, runtime, log);
+  tryExecute(attacker, defender, isAllyAttacker, team, runtime, log, stats);
 }
 
 function takeTurn(
@@ -2233,6 +2272,7 @@ function takeTurn(
   team: Character[],
   runtime: RuntimeState,
   log: string[],
+  stats: BattleStats,
 ) {
   if (processPoison(attacker, isAllyAttacker, team, runtime, log)) {
     return;
@@ -2373,7 +2413,7 @@ function takeTurn(
     flags.skillCooldown = 1;
     log.push(`${attacker.name}发动《${attacker.skill.name}》，失去${hpLoss}HP并连续攻击${hits}次。`);
     for (let hit = 0; hit < hits && defender.hp > 0; hit += 1) {
-      resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+      resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
     }
     return;
   }
@@ -2388,11 +2428,11 @@ function takeTurn(
     flags.nextAttackMultiplier = upgradeLevel(attacker) >= 3 ? (Math.random() < 0.5 ? 3 : 4) : 2;
     flags.skillCooldown = 1;
     log.push(`${attacker.name}发动《${attacker.skill.name}》，立即进行强化攻击。`);
-    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
     return;
   }
 
-  resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+  resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
 
   if (attacker.skill.id === 'keke_charge' && chargeCooldown > 0) {
     flags.kekeChargeCooldown = Math.max(0, chargeCooldown - 1);
@@ -2408,7 +2448,7 @@ function takeTurn(
     attacker.passive?.id === 'boss_chisato_double'
   ) {
     log.push(`${attacker.name}发动「${attacker.passive.name}」，追加第二次攻击。`);
-    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
   }
 
   if (
@@ -2421,7 +2461,7 @@ function takeTurn(
       addShield(attacker, 10, log, '触发Lv2强化');
     }
     log.push(`${attacker.name}发动「${attacker.skill.name}」，追加一次攻击。`);
-    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
   }
   if (attacker.hp > 0 && attacker.passive?.id === 'boss_kasumi_stage_growth') {
     const stacks = Math.min(5, flags.kasumiStageStacks ?? 0);
@@ -2443,6 +2483,7 @@ function runGroupBattle(
   team: Character[],
   runtime: RuntimeState,
   log: string[],
+  stats: BattleStats,
 ) {
   allies.forEach((ally) => prepareCombatant(ally, enemy, true, team, runtime, log));
   prepareCombatant(enemy, allies[0], false, team, runtime, log);
@@ -2477,7 +2518,7 @@ function runGroupBattle(
 
       if (actor.isAlly) {
         if (actor.character.hp > 0) {
-          takeTurn(actor.character, enemy, true, team, runtime, log);
+          takeTurn(actor.character, enemy, true, team, runtime, log, stats);
         }
         continue;
       }
@@ -2488,14 +2529,14 @@ function runGroupBattle(
       const livingAllies = allies.filter((ally) => ally.hp > 0);
       const firstTarget = livingAllies[Math.floor(Math.random() * livingAllies.length)];
       if (firstTarget) {
-        takeTurn(enemy, firstTarget, false, team, runtime, log);
+        takeTurn(enemy, firstTarget, false, team, runtime, log, stats);
       }
 
       for (const extraTarget of livingAllies) {
         if (enemy.hp <= 0 || extraTarget.hp <= 0 || extraTarget.id === firstTarget?.id) {
           continue;
         }
-        resolveAttack(enemy, extraTarget, false, true, team, runtime, log);
+        resolveAttack(enemy, extraTarget, false, true, team, runtime, log, stats);
       }
     }
   }
@@ -2565,6 +2606,9 @@ export function resolveBattleGroup(
   const team = teamInput.map(copyCharacter);
   const enemies = battleInput.enemies.map(copyCharacter);
   const runtime = copyRuntime(battleInput.runtime);
+  const stats: BattleStats = Object.fromEntries(
+    Object.entries(battleInput.stats ?? {}).map(([id, value]) => [id, { ...value }]),
+  );
   const log = [...battleInput.log];
   const uniqueIds = [...new Set(allyIds)];
   const allies = uniqueIds
@@ -2580,6 +2624,7 @@ export function resolveBattleGroup(
         enemies,
         log,
         runtime,
+        stats,
       },
     };
   }
@@ -2590,7 +2635,8 @@ export function resolveBattleGroup(
 
   while (allies.some((ally) => ally.hp > 0) && activeEnemyIndex < enemies.length) {
     const enemy = enemies[activeEnemyIndex];
-    runGroupBattle(allies, enemy, team, runtime, log);
+    allies.forEach((ally) => getBattleStat(stats, ally));
+    runGroupBattle(allies, enemy, team, runtime, log, stats);
 
     if (enemy.hp <= 0) {
       enemy.hp = 0;
@@ -2645,7 +2691,8 @@ export function resolveBattleGroup(
       selectedIds: phase === 'relay' ? [] : battleInput.selectedIds,
       rewardGold,
       log,
-      runtime,
+      runtime,      stats,
+
     },
   };
 }

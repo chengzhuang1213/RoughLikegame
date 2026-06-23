@@ -7,11 +7,13 @@ import {
   RARITY_LABELS,
   SECONDARY_BONDS,
   applyPostNodePassives,
+  type BattleStats,
   type BattleState,
   type BattleType,
   type BossTier,
   type BossTemplate,
   type Character,
+  type CharacterBattleStats,
   type CharacterTemplate,
   type MapNode,
   buildMap,
@@ -98,6 +100,9 @@ interface RunState {
   battle: BattleState | null;
   boss: BossTemplate;
   result: ResultState | null;
+  runStats: BattleStats;
+  statsOpen: boolean;
+  battleStatsOpen: boolean;
   shopOffers: CharacterTemplate[];
   restHealUsed: boolean;
   restReviveUsed: boolean;
@@ -159,6 +164,9 @@ function createRun(): RunState {
     battle: null,
     boss,
     result: null,
+    runStats: {},
+    statsOpen: false,
+    battleStatsOpen: false,
     shopOffers: [],
     restHealUsed: false,
     restReviveUsed: false,
@@ -169,6 +177,41 @@ function createRun(): RunState {
 
 function unique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
+}
+
+function mergeBattleStats(current: BattleStats, battleStats: BattleStats): BattleStats {
+  const merged: BattleStats = Object.fromEntries(
+    Object.entries(current).map(([id, stat]) => [id, { ...stat }]),
+  );
+
+  Object.entries(battleStats).forEach(([id, stat]) => {
+    const target = merged[id] ?? {
+      characterId: stat.characterId,
+      name: stat.name,
+      damageDealt: 0,
+      damageTaken: 0,
+      criticalHits: 0,
+    };
+    target.name = stat.name;
+    target.damageDealt += stat.damageDealt;
+    target.damageTaken += stat.damageTaken;
+    target.criticalHits += stat.criticalHits;
+    merged[id] = target;
+  });
+
+  return merged;
+}
+
+function getOrderedStats(team: Character[], stats: BattleStats): CharacterBattleStats[] {
+  return team
+    .map((member) => ({
+      characterId: member.id,
+      name: member.name,
+      damageDealt: stats[member.id]?.damageDealt ?? 0,
+      damageTaken: stats[member.id]?.damageTaken ?? 0,
+      criticalHits: stats[member.id]?.criticalHits ?? 0,
+    }))
+    .sort((left, right) => right.damageDealt - left.damageDealt);
 }
 
 function portraitStyle(character: Pick<Character | CharacterTemplate, 'color' | 'accent'>): CSSProperties {
@@ -472,6 +515,7 @@ function App() {
           rewardGold: getRewardGold(battleType, enemies),
           log: [`遭遇${NODE_LABELS[battleType]}。先确认敌人，再选择${slots}名出战伙伴。`],
           runtime: {},
+          stats: {},
         };
 
         return {
@@ -613,6 +657,7 @@ function App() {
       );
 
       if (battle.phase === 'won') {
+        const runStats = mergeBattleStats(previous.runStats, battle.stats);
         const isBossBattle = battle.type === 'boss';
         const isFinalBoss = isBossBattle && previous.boss.bossTier === 3;
         const canEnhance = battle.type === 'elite' || (isBossBattle && !isFinalBoss);
@@ -632,6 +677,8 @@ function App() {
           gold: previous.gold + battle.rewardGold,
           battle,
           result,
+          runStats,
+          battleStatsOpen: true,
           screen: isFinalBoss ? 'win' : 'battle',
           pendingEnhance: canEnhance
             ? { source: battle.type === 'boss' ? 'boss' : 'elite', cost: battle.type === 'boss' ? 0 : ENHANCE_COST, free: battle.type === 'boss' }
@@ -644,6 +691,7 @@ function App() {
           ...previous,
           team,
           battle,
+          battleStatsOpen: true,
           screen: 'loss',
         };
       }
@@ -857,7 +905,7 @@ function App() {
           </aside>
 
         <section className="screen-panel">
-          {run.screen === 'map' && <MapScreen nodes={run.map} boss={run.boss} team={run.team} gold={run.gold} musicMuted={musicMuted} onToggleMusic={toggleMusic} onEnter={enterNode} />}
+          {run.screen === 'map' && <MapScreen nodes={run.map} boss={run.boss} team={run.team} stats={run.runStats} gold={run.gold} musicMuted={musicMuted} onToggleMusic={toggleMusic} onEnter={enterNode} onOpenStats={() => setRun((previous) => ({ ...previous, statsOpen: true }))} />}
 
           {run.screen === 'battle' && run.battle && (
             <BattleScreen
@@ -876,7 +924,7 @@ function App() {
           )}
 
           {run.screen === 'result' && run.result && run.battle && (
-            <ResultScreen result={run.result} log={run.battle.log} onContinue={finishCurrentNode} />
+            <ResultScreen result={run.result} log={run.battle.log} stats={run.battle.stats} team={run.team} onContinue={finishCurrentNode} />
           )}
 
           {run.screen === 'shop' && (
@@ -909,6 +957,8 @@ function App() {
               title="胜利"
               body="Boss战完成，Beta角色构筑循环已经跑通。"
               log={run.battle.log}
+              stats={run.battle.stats}
+              team={run.team}
               onRestart={resetRun}
             />
           )}
@@ -918,11 +968,29 @@ function App() {
               title="失败"
               body="所有伙伴都进入重伤状态。下一局可以更早休息或招募。"
               log={run.battle?.log ?? []}
+              stats={run.battle?.stats}
+              team={run.team}
               onRestart={resetRun}
             />
           )}
         </section>
       </main>
+
+      {run.battleStatsOpen && run.battle && (
+        <BattleResultModal
+          phase={run.battle.phase}
+          stats={run.battle.stats}
+          team={run.team}
+          onClose={() => setRun((previous) => ({ ...previous, battleStatsOpen: false }))}
+        />
+      )}
+      {run.statsOpen && (
+        <RunStatsModal
+          stats={run.runStats}
+          team={run.team}
+          onClose={() => setRun((previous) => ({ ...previous, statsOpen: false }))}
+        />
+      )}
 
       {currentNode && (
         <footer className="context-bar">
@@ -1251,10 +1319,12 @@ interface MapScreenProps {
   nodes: MapNode[];
   boss: BossTemplate;
   team: Character[];
+  stats: BattleStats;
   gold: number;
   musicMuted: boolean;
   onToggleMusic: () => void;
   onEnter: (node: MapNode) => void;
+  onOpenStats: () => void;
 }
 
 function BossForecast({ boss }: { boss: BossTemplate }) {
@@ -1382,8 +1452,6 @@ function MapNodeButton({ node, onEnter }: { node: MapNode; onEnter: (node: MapNo
       type="button"
     >
       <span className="node-orb"><img className="node-icon-art" src={NODE_ICON_SRC[node.type]} alt="" /></span>
-      <span className="node-title">{node.type === 'battle' && node.row === 0 ? '起始战斗' : NODE_LABELS[node.type]}</span>
-      <small>{node.completed ? '已完成' : node.available ? '可进入' : NODE_HELP[node.type]}</small>
     </button>
   );
 }
@@ -1402,20 +1470,18 @@ function TeamDock({ team }: { team: Character[] }) {
           member ? (
             <div className={`team-dock-member rarity-${member.rarity}`} key={member.id}>
               <Avatar character={member} label={member.name} />
-              <strong>{member.name}</strong>
               <span>
-                HP {member.hp}/{member.maxHp}
+                {member.hp}/{member.maxHp}
               </span>
             </div>
           ) : (
             <div className="team-empty-slot" key={`empty-${index}`}>
               <span>＋</span>
-              招募位空缺
             </div>
           ),
         )}
       </div>
-      <button className="hud-wide-button" type="button">查看角色</button>
+      <button className="hud-wide-button" type="button">详细</button>
     </section>
   );
 }
@@ -1442,7 +1508,7 @@ function BondProgressDock({ team }: { team: Character[] }) {
       secondary: true,
       logoSrc: BOND_LOGO_SRC[bond.bond.id],
     })),
-  ].slice(0, 5);
+  ];
 
   return (
     <section className="hud-card bond-progress-dock">
@@ -1454,15 +1520,11 @@ function BondProgressDock({ team }: { team: Character[] }) {
         {visibleBonds.map((bond) => (
           <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''}`} key={bond.id}>
             <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
-            <strong>{bond.name}</strong>
-            <div className="bond-track">
-              <span style={{ width: `${Math.min(100, (bond.count / bond.total) * 100)}%` }} />
-            </div>
-            <em>{bond.active ? '已激活' : `${bond.count}/${bond.total}`}</em>
+            <em>{bond.count}/{bond.total}</em>
           </div>
         ))}
       </div>
-      <button className="hud-wide-button" type="button">查看所有羁绊</button>
+      <button className="hud-wide-button" type="button">详细</button>
     </section>
   );
 }
@@ -1501,10 +1563,11 @@ function MapActions() {
   );
 }
 
-function MapScreen({ nodes, boss, team, gold, musicMuted, onToggleMusic, onEnter }: MapScreenProps) {
+function MapScreen({ nodes, boss, team, stats, gold, musicMuted, onToggleMusic, onEnter, onOpenStats }: MapScreenProps) {
   const routeConnections = useMemo(() => getRouteConnections(nodes), [nodes]);
   const livingHp = team.reduce((sum, member) => sum + Math.max(0, member.hp), 0);
   const maxHp = team.reduce((sum, member) => sum + member.maxHp, 0);
+  const hasStats = getOrderedStats(team, stats).some((stat) => stat.damageDealt > 0 || stat.damageTaken > 0 || stat.criticalHits > 0);
 
   return (
     <div className="map-hud-screen">
@@ -1514,26 +1577,27 @@ function MapScreen({ nodes, boss, team, gold, musicMuted, onToggleMusic, onEnter
         <div className="map-resource-row">
           <span className="resource-pill coin">◎ {gold}</span>
           <span className="resource-pill heart">♥ {livingHp}/{maxHp || 0}</span>
-          <button className="settings-button" type="button" aria-label="设置">⚙</button>
+          <button className="settings-button stats-settings-button" disabled={!hasStats} onClick={onOpenStats} type="button" aria-label="本局统计">📊</button>
         </div>
       </header>
 
       <BossForecast boss={boss} />
 
       <div className="map-stage">
-        <MapLegend />
+        <aside className="map-left-rail">
+          <TeamDock team={team} />
+          <BondProgressDock team={team} />
+        </aside>
         <div className="map-board">
           <MapRoutes connections={routeConnections} />
           {nodes.map((node) => (
             <MapNodeButton key={node.id} node={node} onEnter={onEnter} />
           ))}
         </div>
-        <MapActions />
-      </div>
-
-      <div className="map-bottom-dock">
-        <TeamDock team={team} />
-        <BondProgressDock team={team} />
+        <aside className="map-right-rail">
+          <MapActions />
+          <MapLegend />
+        </aside>
       </div>
     </div>
   );
@@ -1937,10 +2001,12 @@ function RestScreen({ gold, team, healUsed, reviveUsed, onHeal, onRevive, onLeav
 interface ResultScreenProps {
   result: ResultState;
   log: string[];
+  stats: BattleStats;
+  team: Character[];
   onContinue: () => void;
 }
 
-function ResultScreen({ result, log, onContinue }: ResultScreenProps) {
+function ResultScreen({ result, log, stats, team, onContinue }: ResultScreenProps) {
   return (
     <div className="flow-screen">
       <div className="screen-heading">
@@ -1950,6 +2016,7 @@ function ResultScreen({ result, log, onContinue }: ResultScreenProps) {
           {result.body} 获得 {result.rewardGold} 金币。
         </p>
       </div>
+      <DamageMeter stats={stats} team={team} title="伤害统计" />
       <BattleLog entries={log} />
       <div className="action-row">
         <button className="primary-button" onClick={onContinue}>
@@ -1964,10 +2031,12 @@ interface EndScreenProps {
   title: string;
   body: string;
   log: string[];
+  stats?: BattleStats;
+  team: Character[];
   onRestart: () => void;
 }
 
-function EndScreen({ title, body, log, onRestart }: EndScreenProps) {
+function EndScreen({ title, body, log, stats, team, onRestart }: EndScreenProps) {
   return (
     <div className="flow-screen">
       <div className="screen-heading">
@@ -1975,6 +2044,7 @@ function EndScreen({ title, body, log, onRestart }: EndScreenProps) {
         <h2>{title}</h2>
         <p>{body}</p>
       </div>
+      {stats && <DamageMeter stats={stats} team={team} title="伤害统计" />}
       {log.length > 0 && <BattleLog entries={log} />}
       <div className="action-row">
         <button className="primary-button" onClick={onRestart}>
@@ -2125,6 +2195,90 @@ function CompactCharacter({ character }: { character: Character }) {
   );
 }
 
+function DamageMeter({ stats, team, title }: { stats: BattleStats; team: Character[]; title: string }) {
+  const orderedStats = getOrderedStats(team, stats).filter(
+    (stat) => stat.damageDealt > 0 || stat.damageTaken > 0 || stat.criticalHits > 0,
+  );
+  const maxDamage = Math.max(1, ...orderedStats.map((stat) => stat.damageDealt));
+
+  if (orderedStats.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="damage-meter" aria-label={title}>
+      <h3>{title}</h3>
+      <div className="damage-meter-list">
+        {orderedStats.map((stat) => (
+          <div className="damage-meter-row" key={stat.characterId}>
+            <strong>{stat.name}</strong>
+            <div className="damage-bar-line">
+              <span className="damage-bar-track">
+                <span style={{ width: `${Math.max(8, Math.round((stat.damageDealt / maxDamage) * 100))}%` }} />
+              </span>
+              <b>{stat.damageDealt}</b>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BattleResultModal({ phase, stats, team, onClose }: { phase: BattleState['phase']; stats: BattleStats; team: Character[]; onClose: () => void }) {
+  const [showStats, setShowStats] = useState(false);
+  const isLost = phase === 'lost';
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="reward-modal battle-result-modal" role="dialog" aria-modal="true" aria-label="战斗结果" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-heading">
+          <h2>{isLost ? '战斗失败' : '战斗胜利'}</h2>
+        </div>
+        <p className="battle-result-modal-copy">
+          {isLost ? '所有可出战角色都已无法继续战斗。' : '敌方已被击败，我方保留战后生命值。'}
+        </p>
+        {showStats && <DamageMeter stats={stats} team={team} title="伤害统计" />}
+        <div className="battle-result-modal-actions">
+          <button className="secondary-button" onClick={() => setShowStats((visible) => !visible)} type="button">
+            {showStats ? '收起伤害统计' : '查看伤害统计'}
+          </button>
+          <button className="primary-button" onClick={onClose} type="button">
+            返回
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RunStatsModal({ stats, team, onClose }: { stats: BattleStats; team: Character[]; onClose: () => void }) {
+  const orderedStats = getOrderedStats(team, stats);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="reward-modal stats-modal" role="dialog" aria-modal="true" aria-label="本局统计" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-heading">
+          <h2>本局统计</h2>
+          <button className="ghost-button" onClick={onClose} type="button">
+            关闭
+          </button>
+        </div>
+        <div className="run-stat-list">
+          {orderedStats.map((stat) => (
+            <div className="run-stat-card" key={stat.characterId}>
+              <h3>{stat.name}</h3>
+              <p>总伤害：{stat.damageDealt}</p>
+              <p>承伤：{stat.damageTaken}</p>
+              <p>暴击：{stat.criticalHits}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function BattleLog({ entries }: { entries: string[] }) {
   const visibleEntries = entries;
 
@@ -2141,4 +2295,3 @@ function BattleLog({ entries }: { entries: string[] }) {
 }
 
 export default App;
-
