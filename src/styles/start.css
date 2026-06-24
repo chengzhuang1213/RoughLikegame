@@ -1,0 +1,108 @@
+.start-page {
+  min-height: calc(100vh - 56px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  gap: 0;
+  padding: 38px 0 58px;
+}
+
+.start-copy {
+  display: grid;
+  justify-items: center;
+  width: min(720px, 100%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  padding: 0;
+  text-align: center;
+  box-shadow: none;
+}
+
+.start-logo {
+  width: min(620px, 74vw);
+  margin: 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 24px rgba(96, 45, 140, 0.22));
+}
+
+.school-gate-start {
+  position: relative;
+  overflow: hidden;
+  align-self: end;
+  width: min(500px, calc(100vw - 52px));
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 20px 44px rgba(138, 55, 164, 0.22);
+  transition:
+    transform 160ms ease;
+}
+
+.school-gate-start::before,
+.school-gate-start::after {
+  content: none;
+}
+
+.school-gate-start img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 24px rgba(85, 34, 130, 0.24));
+}
+
+.school-gate-start:hover,
+.school-gate-start:focus-visible {
+  outline: none;
+  transform: scale(1.03);
+}
+
+.school-gate-start:active::after {
+  animation: gate-flash 420ms ease;
+}
+
+.school-gate-name,
+.school-gate-start strong,
+.school-gate-start small {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+.school-gate-name {
+  margin-bottom: 6px;
+  color: rgba(255, 240, 192, 0.84);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.school-gate-start strong {
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  line-height: 1.05;
+  letter-spacing: 0;
+  text-shadow: 0 0 10px rgba(255, 225, 128, 0.72);
+}
+
+.school-gate-start small {
+  margin-top: 8px;
+  color: #fff4c9;
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+@keyframes gate-flash {
+  from {
+    left: -90%;
+  }
+  to {
+    left: 135%;
+  }
+}

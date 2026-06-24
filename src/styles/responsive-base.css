@@ -1,0 +1,133 @@
+@media (max-width: 820px) {
+  .app-shell {
+    width: min(100% - 20px, 680px);
+    padding-top: 12px;
+  }
+
+  .topbar,
+  .main-layout,
+  .battle-columns,
+  .rest-row {
+    grid-template-columns: 1fr;
+  }
+
+  .map-detail-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .map-character-bonds,
+  .map-bond-members {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .draft-toolbar {
+    display: grid;
+  }
+
+  .draft-actions {
+    justify-content: flex-start;
+  }
+
+  .draft-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-card {
+    grid-template-rows: minmax(240px, 42vh) auto;
+  }
+
+  .start-copy {
+    padding-left: 0;
+  }
+
+  .topbar {
+    display: grid;
+  }
+
+  .run-stats {
+    justify-content: flex-start;
+  }
+
+  .main-layout {
+    display: grid;
+  }
+
+  .side-panel {
+    position: static;
+    order: 2;
+  }
+
+  .screen-panel {
+    min-height: auto;
+    padding: 16px;
+  }
+
+  .boss-forecast {
+    grid-template-columns: 1fr;
+  }
+
+  .map-row {
+    grid-template-columns: 1fr;
+  }
+
+  .map-row:last-child {
+    max-width: none;
+  }
+
+  .action-row,
+  .rest-actions {
+    justify-content: stretch;
+  }
+
+  .action-row button,
+  .rest-actions button {
+    width: 100%;
+  }
+
+  .rest-blessing-heading,
+  .blessing-member-card {
+    grid-template-columns: 1fr;
+  }
+
+  .rest-blessing-heading {
+    display: grid;
+  }
+
+  .rest-action-cards,
+  .rest-team-members,
+  .shop-offer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-header {
+    display: flex;
+  }
+
+  .shop-resource-bar {
+    justify-content: stretch;
+  }
+
+  .shop-resource-pill {
+    flex: 1 1 100%;
+  }
+
+  .shop-recruit-panel {
+    padding: 20px 14px 24px;
+  }
+
+  .shop-detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .rest-leave-button {
+    position: static;
+    width: 100%;
+    transform: none;
+  }
+
+  .rest-screen,
+  .blessing-screen {
+    padding-bottom: 0;
+  }
+}

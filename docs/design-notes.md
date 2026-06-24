@@ -11,8 +11,16 @@
 - 图片与音频路径：`src/assets.ts`
 - 战斗结算逻辑：`src/game/battle.ts`
 - 羁绊计算逻辑：`src/game/bonds.ts`
+- 角色升级说明：`src/game/data/upgrades.tsx`
+- 开始页组件：`src/pages/StartScreen.tsx`
 - 地图页面组件：`src/pages/MapScreen.tsx`
 - 通用头像、等级徽章、音乐按钮：`src/components/common.tsx`
+- 通用角色卡：`src/components/cards.tsx`
+- 紧凑角色行：`src/components/characters.tsx`
+- 战斗日志、伤害统计、统计弹窗：`src/components/battleLog.tsx`
+- tooltip 信息标签：`src/components/info.tsx`
+- 样式入口：`src/styles.css`
+- 分区样式：`src/styles/`
 
 ## 数据维护规则
 
@@ -55,8 +63,5 @@
 
 ## 后续清洁清单
 
-- 把开始页、选人页、战斗页、商店、休息处、结算页继续拆到 `src/pages/`。
-- 把 `BondPanel`、角色卡、战斗日志、统计弹窗继续拆到 `src/components/`。
-- 把 `styles.css` 按页面和组件拆成 `src/styles/` 下的多个文件，再由一个入口统一导入。
-- 把角色升级文案从 `App.tsx` 继续迁移到数据或独立说明文件。
+- 后续如果继续清洁，优先把 `src/styles/components.css` 中的通用卡片、羁绊、日志样式再细分。
 
