@@ -966,7 +966,7 @@
 }
 
 .stats-modal {
-  width: min(520px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
 }
 
 .modal-heading {

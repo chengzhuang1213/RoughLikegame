@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { CharacterTemplate } from '../game';
 import {
   BOND_GROUPS,
@@ -33,9 +34,39 @@ export interface DraftScreenProps {
   onConfirm: () => void;
 }
 
+function useMobileDraftMode() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 820px)').matches);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 820px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return isMobile;
+}
+
 export function DraftScreen({ candidates, selectedIds, onToggle, onReroll, onConfirm }: DraftScreenProps) {
   const visibleCandidates = candidates.slice(0, 3);
   const selectedCandidates = visibleCandidates.filter((candidate) => selectedIds.includes(candidate.id));
+  const isMobileDraft = useMobileDraftMode();
+  const [detailCandidate, setDetailCandidate] = useState<CharacterTemplate | null>(null);
+
+  function handleCandidateClick(candidate: CharacterTemplate) {
+    if (isMobileDraft) {
+      setDetailCandidate(candidate);
+      return;
+    }
+
+    onToggle(candidate.id);
+  }
+
+  function confirmCandidate(candidate: CharacterTemplate) {
+    onToggle(candidate.id);
+    setDetailCandidate(null);
+  }
 
   return (
     <main className="draft-page">
@@ -60,11 +91,19 @@ export function DraftScreen({ candidates, selectedIds, onToggle, onReroll, onCon
             key={candidate.id}
             template={candidate}
             selected={selectedIds.includes(candidate.id)}
-            onClick={() => onToggle(candidate.id)}
+            onClick={() => handleCandidateClick(candidate)}
           />
         ))}
       </div>
       <DraftBondPreview selectedCharacters={selectedCandidates} />
+      {detailCandidate && (
+        <DraftCandidateDetailModal
+          selected={selectedIds.includes(detailCandidate.id)}
+          template={detailCandidate}
+          onClose={() => setDetailCandidate(null)}
+          onConfirm={() => confirmCandidate(detailCandidate)}
+        />
+      )}
     </main>
   );
 }
@@ -198,5 +237,69 @@ function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardP
         <em>{selected ? '已选择' : '点击选择'}</em>
       </div>
     </button>
+  );
+}
+
+function DraftCandidateDetailModal({ template, selected, onClose, onConfirm }: { template: CharacterTemplate; selected: boolean; onClose: () => void; onConfirm: () => void }) {
+  const primaryBond = getBondGroupForTemplate(template);
+  const secondaryBonds = getSecondaryBondsForTemplate(template.id);
+  const tagOwnedIds = new Set([template.id]);
+
+  return (
+    <div className="modal-backdrop draft-detail-backdrop" role="dialog" aria-modal="true" aria-label={`${template.name}详情`}>
+      <div className={`reward-modal draft-detail-modal rarity-${template.rarity}`}>
+        <div className="draft-detail-heading">
+          <div className="draft-detail-portrait">
+            <img
+              alt=""
+              src={draftImageSrc(template)}
+              onError={(event) => {
+                event.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+          <div>
+            <p className="eyebrow">候选偶像</p>
+            <h2>{template.name}</h2>
+            <div className="card-tags">
+              <div className="card-tag-row bond-row">
+                {primaryBond ? (
+                  <BondTag label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} summary={groupDetail(template.group)} />
+                ) : (
+                  <InfoPill className="group-tag" label={GROUP_LABELS[template.group]} tooltip={groupDetail(template.group)} />
+                )}
+                {secondaryBonds.map((bond) => (
+                  <BondTag className="secondary-bond-tag" key={bond.id} label={bond.name} memberIds={bond.memberIds} ownedIds={tagOwnedIds} summary={bond.description} />
+                ))}
+              </div>
+              <div className="card-tag-row meta-row">
+                <InfoPill className={`rarity-tag rarity-${template.rarity}`} label={RARITY_LABELS[template.rarity]} tooltip={rarityDetail(template.rarity)} />
+                {template.role && <InfoPill className="group-tag" label={ROLE_LABELS[template.role]} tooltip={roleDetail(template.role)} />}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="draft-stats draft-detail-stats" aria-label={`${template.name}数值`}>
+          <span><strong>{template.maxHp}</strong>HP</span>
+          <span><strong>{template.attack}</strong>攻击</span>
+          <span><strong>{template.speed}</strong>速度</span>
+        </div>
+        {template.passive && (
+          <div className="draft-ability">
+            <span>被动</span>
+            <p>{`被动「${template.passive.name}」：${template.passive.description}`}</p>
+          </div>
+        )}
+        <div className="draft-ability">
+          <span>技能</span>
+          <p>{`技能「${template.skill.name}」：${template.skill.description}`}</p>
+        </div>
+        <UpgradePreview template={template} />
+        <div className="draft-detail-actions">
+          <button className="secondary-button" type="button" onClick={onClose}>返回</button>
+          <button className="primary-button" type="button" onClick={onConfirm}>{selected ? '取消选择' : '确认选择'}</button>
+        </div>
+      </div>
+    </div>
   );
 }

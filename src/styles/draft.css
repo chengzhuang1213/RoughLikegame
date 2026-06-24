@@ -282,35 +282,47 @@
 
 @media (max-width: 820px) {
   .draft-page {
-    gap: 14px;
-    padding: 10px 0 18px;
+    gap: 10px;
+    padding: 6px 0 14px;
   }
 
   .draft-toolbar {
     align-items: stretch;
-    gap: 12px;
+    gap: 8px;
+  }
+
+  .draft-toolbar .screen-heading h2 {
+    font-size: 1.42rem;
+  }
+
+  .draft-toolbar .screen-heading p:not(.eyebrow) {
+    margin-top: 5px;
+    font-size: 0.82rem;
+    line-height: 1.35;
   }
 
   .draft-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    gap: 7px;
   }
 
   .draft-actions button {
-    min-height: 44px;
+    min-height: 40px;
     width: 100%;
     padding-inline: 10px;
+    font-size: 0.9rem;
   }
 
   .draft-grid {
-    gap: 12px;
+    gap: 8px;
   }
 
-  .draft-card {
-    grid-template-columns: minmax(96px, 34%) minmax(0, 1fr);
+  .draft-page .draft-card {
+    grid-template-columns: 86px minmax(0, 1fr);
     grid-template-rows: none;
     min-height: 0;
+    height: 156px;
     overflow: hidden;
   }
 
@@ -335,8 +347,8 @@
   }
 
   .draft-card-body {
-    gap: 7px;
-    padding: 10px;
+    gap: 5px;
+    padding: 8px;
   }
 
   .draft-card-body .card-tags {
@@ -356,33 +368,27 @@
   }
 
   .draft-card-body h3 {
-    font-size: 1.05rem;
+    font-size: 0.98rem;
   }
 
   .draft-stats {
     gap: 4px;
-    padding: 4px;
+    padding: 3px;
   }
 
   .draft-stats span {
-    padding: 5px 4px;
+    padding: 4px 3px;
     font-size: 0.68rem;
     text-align: center;
   }
 
   .draft-stats strong {
-    font-size: 0.9rem;
+    font-size: 0.84rem;
   }
 
-  .draft-ability {
-    height: auto;
-    max-height: 72px;
-    padding: 6px 7px;
-  }
-
-  .draft-ability p {
-    font-size: 0.76rem;
-    line-height: 1.42;
+  .draft-card > .draft-card-body > .draft-ability,
+  .draft-card > .draft-card-body > .upgrade-preview {
+    display: none;
   }
 
   .draft-card-body em {
@@ -398,18 +404,88 @@
     grid-template-columns: 1fr;
     gap: 10px;
   }
+
+  .draft-detail-backdrop {
+    padding: 12px;
+  }
+
+  .draft-detail-modal {
+    width: min(100%, 420px);
+    max-height: calc(100vh - 24px);
+    padding: 14px;
+  }
+
+  .draft-detail-heading {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+  }
+
+  .draft-detail-heading h2 {
+    margin: 0 0 8px;
+    font-size: 1.42rem;
+  }
+
+  .draft-detail-portrait {
+    height: 132px;
+    overflow: hidden;
+    border: 2px solid var(--rarity-border, #dbe3ef);
+    border-radius: 8px;
+    background: #f8fbff;
+  }
+
+  .draft-detail-portrait img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  .draft-detail-stats {
+    margin: 12px 0;
+  }
+
+  .draft-detail-modal .draft-ability {
+    height: auto;
+    max-height: none;
+    margin-top: 8px;
+  }
+
+  .draft-detail-modal .draft-ability p {
+    font-size: 0.84rem;
+    line-height: 1.48;
+  }
+
+  .draft-detail-modal > .upgrade-preview {
+    position: static;
+    display: grid;
+    width: 100%;
+    margin-top: 8px;
+    pointer-events: auto;
+    box-shadow: none;
+  }
+
+  .draft-detail-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .draft-detail-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 420px) {
-  .draft-card {
-    grid-template-columns: 92px minmax(0, 1fr);
+  .draft-page .draft-card {
+    grid-template-columns: 82px minmax(0, 1fr);
+    height: 152px;
   }
 
   .draft-card-body {
-    padding: 9px;
-  }
-
-  .draft-ability {
-    max-height: 64px;
+    padding: 7px;
   }
 }

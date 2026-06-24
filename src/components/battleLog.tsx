@@ -109,8 +109,6 @@ export function BattleResultModal({
 }
 
 export function RunStatsModal({ stats, team, onClose }: { stats: BattleStats; team: Character[]; onClose: () => void }) {
-  const orderedStats = getOrderedStats(team, stats);
-
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="reward-modal stats-modal" role="dialog" aria-modal="true" aria-label="本局统计" onClick={(event) => event.stopPropagation()}>
@@ -120,22 +118,7 @@ export function RunStatsModal({ stats, team, onClose }: { stats: BattleStats; te
             关闭
           </button>
         </div>
-        <div className="run-stat-list">
-          {orderedStats.map((stat) => (
-            <div className="run-stat-card" key={stat.characterId}>
-              <div className="run-stat-card-heading">
-                {team.find((member) => member.id === stat.characterId) && (
-                  <Avatar character={team.find((member) => member.id === stat.characterId)!} label={stat.name} small />
-                )}
-                <h3>{stat.name}</h3>
-              </div>
-              <p>总伤害：{stat.damageDealt}</p>
-              <p>承伤：{stat.damageTaken}</p>
-              <p>护盾抵挡：{stat.shieldBlocked}</p>
-              <p>暴击：{stat.criticalHits}</p>
-            </div>
-          ))}
-        </div>
+        <DamageMeter stats={stats} team={team} title="本局统计" />
       </section>
     </div>
   );
