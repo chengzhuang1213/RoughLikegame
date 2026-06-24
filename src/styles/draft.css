@@ -469,27 +469,26 @@
   }
 
   .draft-detail-modal .info-pill::after {
-    position: fixed;
-    left: 18px;
-    right: 18px;
-    bottom: 92px;
-    top: auto;
-    width: auto;
-    max-width: none;
-    transform: none;
+    left: 50%;
+    right: auto;
+    top: calc(100% + 6px);
+    bottom: auto;
+    width: max-content;
+    max-width: min(300px, calc(100vw - 44px));
+    transform: translateX(-50%);
     z-index: 1000;
     text-align: left;
   }
 
   .draft-detail-modal .bond-tag .bond-member-popover {
-    position: fixed;
-    left: 18px;
-    right: 18px;
-    bottom: 92px;
-    top: auto;
-    width: auto;
+    left: 50%;
+    right: auto;
+    top: calc(100% + 6px);
+    bottom: auto;
+    width: min(300px, calc(100vw - 44px));
     min-width: 0;
-    max-width: none;
+    max-width: min(300px, calc(100vw - 44px));
+    transform: translateX(-50%);
     z-index: 1000;
     grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
   }

@@ -188,9 +188,17 @@ function maxUpgradeLevel(rarity: Character['rarity'] | CharacterTemplate['rarity
   return 1;
 }
 
+function shouldStartMuted() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.matchMedia('(max-width: 820px), (pointer: coarse)').matches;
+}
+
 function App() {
   const [run, setRun] = useState<RunState>(() => createRun());
-  const [musicMuted, setMusicMuted] = useState(false);
+  const [musicMuted, setMusicMuted] = useState(() => shouldStartMuted());
   const [shopSelectedOffer, setShopSelectedOffer] = useState<CharacterTemplate | null>(null);
   const [goldPulse, setGoldPulse] = useState(false);
   const [startTransitioning, setStartTransitioning] = useState(false);
