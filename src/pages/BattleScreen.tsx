@@ -215,7 +215,7 @@ function BattleStandee({ character, replayEvent, side, defeated = false }: { cha
     ? enemyScale
     : legendarySkinScale[character.templateId] ?? 1.28;
   const calloutBottom = side === 'enemy'
-    ? character.rarity === 'boss' ? '230px' : character.rarity === 'elite' ? '200px' : '186px'
+    ? character.rarity === 'boss' ? '230px' : character.rarity === 'elite' ? '158px' : '148px'
     : legendarySkinScale[character.templateId] ? '178px' : '214px';
 
   return (

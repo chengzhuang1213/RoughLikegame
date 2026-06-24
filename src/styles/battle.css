@@ -313,7 +313,7 @@
   position: absolute;
   left: 50%;
   bottom: var(--callout-bottom, 188px);
-  z-index: 6;
+  z-index: 12;
   max-width: min(220px, 72vw);
   transform: translateX(-50%);
   pointer-events: none;
@@ -365,6 +365,8 @@
   background: rgba(255, 255, 255, 0.96);
   color: #26324c;
   box-shadow: 0 12px 28px rgba(37, 48, 77, 0.18);
+  font-size: 0.86rem;
+  padding: 7px 12px;
 }
 
 .battle-standee-enemy.rarity-boss .battle-skill-callout {
