@@ -7,9 +7,9 @@ export const BOND_GROUPS: BondGroup[] = [
     theme: '攻击 / 暴击',
     memberIds: ['ayumu', 'rina', 'nico'],
     level2Name: '萌力扩散',
-    level2Description: '全队攻击+2。',
+    level2Description: '全队攻击+1。',
     level3Name: '世界第一偶像',
-    level3Description: '全队暴击率+15%。',
+    level3Description: '全队攻击+3，暴击率+5%。',
   },
   {
     id: 'silver',
@@ -17,9 +17,9 @@ export const BOND_GROUPS: BondGroup[] = [
     theme: '灰毛 / 首次伤害 / 爆发',
     memberIds: ['keke', 'kotori', 'you'],
     level2Name: '灰毛共振',
-    level2Description: '灰毛成员首次造成伤害时，伤害提高25%。',
+    level2Description: '成员首次造成伤害时，伤害提高25%。',
     level3Name: '灵感全开',
-    level3Description: '灰毛成员首次造成伤害时，伤害提高50%。',
+    level3Description: '成员首次造成伤害时，伤害提高50%。',
   },
   {
     id: 'president',
@@ -34,12 +34,12 @@ export const BOND_GROUPS: BondGroup[] = [
   {
     id: 'mystery',
     name: '命运之子',
-    theme: '生命 / 梦境 / 共鸣',
+    theme: '致命保护 / 梦境 / 共鸣',
     memberIds: ['kanata', 'yoshiko', 'nozomi'],
     level2Name: '梦境共鸣',
-    level2Description: '全队生命值上限+10。',
+    level2Description: '上场的命运之子成员首次受到致命伤害时，保留1HP。',
     level3Name: '命运共鸣',
-    level3Description: '全队生命值上限+20。',
+    level3Description: '上场的命运之子成员首次受到致命伤害时，保留1HP并获得35护盾。',
   },
 ];
 
@@ -48,13 +48,13 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
     id: 'little_devil',
     name: '小恶魔',
     memberIds: ['nico', 'yoshiko'],
-    description: '暴击时附加5层毒。',
+    description: '小恶魔成员生命值高于50%时，每回合开始攻击+1；低于50%时，每回合开始获得2护盾。',
   },
   {
     id: 'nozoeli',
     name: '绘希',
     memberIds: ['eli', 'nozomi'],
-    description: '开场获得15%最大生命值护盾。',
+    description: '绘里与希都上场时，二者每回合开始随机获得攻击+2或速度+2。',
   },
   {
     id: 'angel',
@@ -66,7 +66,7 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
     id: 'dreamer',
     name: '梦想家',
     memberIds: ['keke', 'kanata'],
-    description: '每经过一个节点，可可与彼方均获得+1攻击、+1速度和+5最大生命。',
+    description: '每经过2个节点，可可与彼方均获得+1攻击和+5最大生命。',
   },
   {
     id: 'lucky_star',
@@ -78,7 +78,7 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
     id: 'campus_leader',
     name: '校园领袖',
     memberIds: ['ren', 'ayumu'],
-    description: '首次攻击造成1.5倍伤害。',
+    description: '校园领袖上场时，首次受到的伤害-3点。',
   },
   {
     id: 'full_speed',
@@ -90,6 +90,6 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
     id: 'energetic_idol',
     name: '元气偶像',
     memberIds: ['you', 'nico'],
-    description: '首回合暴击率+50%。',
+    description: '首回合攻击+3。',
   },
 ];

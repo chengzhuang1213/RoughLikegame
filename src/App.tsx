@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CHARACTER_POOL,
@@ -21,6 +22,7 @@ import {
   createAlly,
   createDraftCandidates,
   createEnemiesForBattle,
+  createShopOffers,
   GROUP_LABELS,
   getActiveBonds,
   getActiveSecondaryBonds,
@@ -29,7 +31,6 @@ import {
   getRewardGold,
   isBattleNode,
   resolveBattleGroup,
-  sample,
 } from './game';
 import { BOND_LOGO_SRC, DRAFT_IMAGE_BY_ID, MUSIC_SRC, SFX_SRC, type MusicKey, type SfxKey } from './assets';
 import { Avatar, MusicToggleButton, UpgradeLevelBadge } from './components/common';
@@ -78,17 +79,19 @@ interface RunState {
   restHealUsed: boolean;
   restReviveUsed: boolean;
   pendingEnhance: { source: 'elite' | 'boss'; cost: number; free: boolean } | null;
+  enhanceReady: boolean;
   pendingBossVictory: boolean;
+  bossRetrySnapshot: { team: Character[]; battle: BattleState } | null;
 }
 
 type HealType = 'small' | 'large';
 
 const HEAL_OPTIONS: Record<HealType, { label: string; cost: number; amount: number; full?: boolean }> = {
   small: { label: '小治疗', cost: 20, amount: 15 },
-  large: { label: '大治疗', cost: 50, amount: 0, full: true },
+  large: { label: '大治疗', cost: 50, amount: 50 },
 };
-const REVIVE_COST = 80;
-const REVIVE_HP_RATIO = 0.6;
+const REVIVE_COST = 40;
+const REVIVE_HP_RATIO = 0.3;
 const ENHANCE_COST = 20;
 
 function applyLayerBlessing(team: Character[]): Character[] {
@@ -128,7 +131,9 @@ function createRun(): RunState {
     restHealUsed: false,
     restReviveUsed: false,
     pendingEnhance: null,
+    enhanceReady: false,
     pendingBossVictory: false,
+    bossRetrySnapshot: null,
   };
 }
 
@@ -174,8 +179,9 @@ function getOrderedStats(team: Character[], stats: BattleStats): CharacterBattle
     .sort((left, right) => right.damageDealt - left.damageDealt);
 }
 
-function draftImageSrc(template: CharacterTemplate) {
-  return DRAFT_IMAGE_BY_ID[template.id] ?? template.avatar;
+function draftImageSrc(character: CharacterTemplate | Character) {
+  const templateId = 'templateId' in character ? character.templateId : character.id;
+  return DRAFT_IMAGE_BY_ID[templateId] ?? character.avatar;
 }
 
 function getSecondaryBondsForTemplate(templateId: string) {
@@ -187,7 +193,7 @@ function groupDetail(groupId: CharacterTemplate['group']) {
   if (!group) {
     return `${GROUP_LABELS[groupId]}：主羁绊。`;
   }
-  return `${group.name}：${group.theme}。2人：${group.level2Name}，${group.level2Description} 3人：${group.level3Name}，${group.level3Description}`;
+  return `${group.name}。2人：${group.level2Description} 3人：${group.level3Description}`;
 }
 
 function rarityDetail(rarity: CharacterTemplate['rarity']) {
@@ -234,10 +240,10 @@ function getTemplateById(id: string) {
 
 function maxUpgradeLevel(rarity: Character['rarity'] | CharacterTemplate['rarity']) {
   if (rarity === 'normal') {
-    return 2;
+    return 3;
   }
   if (rarity === 'star') {
-    return 3;
+    return 4;
   }
   if (rarity === 'legendary') {
     return 5;
@@ -248,29 +254,51 @@ function maxUpgradeLevel(rarity: Character['rarity'] | CharacterTemplate['rarity
 function getUpgradeEffectLines(templateId: string, level: number): string[] {
   switch (templateId) {
     case 'ayumu':
-      return level >= 3 ? ['技能：全体恢复15生命，并解除所有毒层。', '被动：治疗友军后，下次治疗+3点。'] : level >= 2 ? ['技能：全体恢复10生命。', '被动：治疗友军后，下次治疗+3点。'] : ['技能：全体恢复5生命。', '被动：治疗友军后，下次治疗+3点。'];
+      return level >= 4 ? ['技能：温柔守护无CD，全体恢复15生命。', '被动：每次释放技能后，后续治疗量+3。'] : level >= 3 ? ['技能CD1：全体恢复15生命。', '被动：每次释放技能后，后续治疗量+3。'] : level >= 2 ? ['技能CD1：全体恢复10生命。', '被动：每次释放技能后，后续治疗量+3。'] : ['技能CD1：治疗一个单位10生命。', '被动：每次释放技能后，后续治疗量+3。'];
     case 'rina':
-      return level >= 2 ? ['技能：50%概率追加攻击，并获得10护盾。'] : ['技能：30%概率追加攻击。'];
+      return level >= 3
+        ? ['被动：攻击时有75%概率追加一次攻击。', '战斗开始时获得10点护盾。']
+        : level >= 2
+          ? ['被动：攻击时有50%概率追加一次攻击。', '战斗开始时获得10点护盾。']
+          : ['被动：攻击时有50%概率追加一次攻击。'];
     case 'nico':
       return level >= 5 ? ['被动：每次使用技能时，攻击力永久提高4点。', '技能：连续攻击4次，不损失生命，可连续释放但生命值必须高于20%，基础攻击力+1。'] : level >= 4 ? ['被动：每次使用技能时，攻击力永久提高4点。', '技能：连续攻击3次，不损失生命，可连续释放但生命值必须高于20%，基础攻击力+1。'] : level >= 3 ? ['被动：每次使用技能时，攻击力永久提高4点。', '技能：连续攻击3次，不再损失生命值，基础攻击力+1。'] : level >= 2 ? ['被动：每次使用技能时，攻击力永久提高4点。', '技能：失去当前生命值10%，连续攻击2次。'] : ['被动：每次使用技能时，攻击力永久提高3点。', '技能CD1：失去当前生命值10%，连续攻击2次。'];
     case 'kotori':
-      return level >= 3 ? ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：Lv2强化暴击率提升至50%；先结算技能伤害，再额外造成10点真实伤害。'] : level >= 2 ? ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：Lv2强化暴击率提升至50%，暴击造成2倍伤害。'] : ['被动：攻击击碎所有护盾，后续护盾量减半。', '技能：30%暴击，暴击造成2倍伤害。'];
+      return level >= 4 ? ['被动：敌方获得护盾效果降低50%；攻击前摧毁目标所有护盾。', '技能：50%暴击，暴击造成2倍伤害；攻击额外附加10点真实伤害。'] : level >= 3 ? ['被动：敌方获得护盾效果降低50%；攻击前摧毁目标所有护盾。', '技能：50%暴击，暴击造成2倍伤害。'] : level >= 2 ? ['被动：敌方获得护盾效果降低50%。', '技能：50%暴击，暴击造成2倍伤害。'] : ['被动：敌方获得护盾效果降低50%。', '技能：30%暴击，暴击造成2倍伤害。'];
     case 'keke':
       return level >= 5 ? ['被动：每次攻击恢复造成伤害15%的生命值。', '超级变身：攻击力+5，速度+1，仅一次。', '可可重击：10%造成5倍伤害，90%造成3.3倍伤害。'] : level >= 4 ? ['被动：每次攻击恢复造成伤害15%的生命值。', '超级变身：攻击力+3，速度+1，仅一次。', '可可重击：10%造成4倍伤害，90%造成2.5倍伤害。'] : level >= 3 ? ['被动：每次攻击恢复造成伤害15%的生命值。', '超级变身：攻击力+3，速度+1，仅一次。', '可可重击：10%造成3倍伤害，90%造成1.75倍伤害。'] : level >= 2 ? ['被动：每次攻击恢复造成伤害15%的生命值。', '超级变身：攻击力+1，速度+1，仅一次。', '解锁可可重击：10%造成3倍伤害，90%造成1.75倍伤害。'] : ['被动：每次攻击恢复造成伤害15%的生命值。', '超级变身：全场仅一次，攻击力+1，速度+1，本回合不进行其他行动。'];
     case 'you':
-      return level >= 2 ? ['技能：首次攻击施加易损，下次伤害2.5倍。'] : ['技能：首次攻击施加易损，下次伤害2倍。'];
+      return level >= 3
+        ? ['被动：攻击后施加易损，使下一次单体攻击造成2.5倍伤害。']
+        : level >= 2
+          ? ['被动：攻击后施加易损，使下一次单体攻击造成2倍伤害。']
+          : ['被动：攻击后施加易损，使下一次单体攻击造成1.5倍伤害。'];
     case 'eli':
-      return level >= 3 ? ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+4，并获得2点速度。'] : level >= 2 ? ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+3。'] : ['被动：每受到一次攻击，本场攻击力+1。', '技能CD1：全体友方攻击力+2。'];
+      return level >= 4 ? ['被动：敌方回血效果降低50%；绘里保证成为玩家方第一个行动单位。', '技能CD1：全体友方攻击力+4，并指定一名友方立即普通攻击。'] : level >= 3 ? ['被动：敌方回血效果降低50%；绘里保证成为玩家方第一个行动单位。', '技能CD1：全体友方攻击力+4，随后绘里普通攻击。'] : level >= 2 ? ['被动：敌方回血效果降低50%；绘里保证成为玩家方第一个行动单位。', '技能CD1：全体友方攻击力+2，随后绘里普通攻击。'] : ['被动：敌方回血效果降低50%。', '技能CD1：全体友方攻击力+2，随后绘里普通攻击。'];
     case 'mari':
-      return level >= 5 ? ['核心资源：战意。每次攻击和释放技能获得1层战意。', '每层战意每回合提供1护盾和0.5攻击力；技能伤害每层+3%。', '战意上限7层，达到7层时「理事长的完美谢幕」直接斩杀目标。'] : level >= 4 ? ['核心资源：战意。每次攻击和释放技能获得1层战意。', '每层战意每回合提供1护盾和0.5攻击力；技能伤害每层+3%。'] : level >= 3 ? ['核心资源：战意。每次攻击和释放技能获得1层战意。', '每层战意每回合提供1护盾和0.5攻击力。'] : level >= 2 ? ['核心资源：战意。开场获得2层战意。', '每层战意每回合提供0.5护盾和0.5攻击力。'] : ['核心资源：战意。每次攻击和释放技能获得1层战意。', '理事长的完美谢幕：进行一次攻击；若拥有护盾，必定暴击并造成1.5倍伤害。'];
+      return level >= 5 ? ['核心资源：战意。每次攻击和释放技能获得1层战意，最多4层。', '每层战意每回合提供2护盾和1攻击力。', '4级战意下「理事长的完美谢幕」追加队友攻击力总和65%的伤害。'] : level >= 3 ? ['核心资源：战意。每次攻击和释放技能获得1层战意，最多3层。', '每层战意每回合提供2护盾和1攻击力。'] : level >= 2 ? ['核心资源：战意。开场获得2层战意，最多3层。', '每层战意每回合提供0.5护盾和0.5攻击力。'] : ['核心资源：战意。每次攻击和释放技能获得1层战意，最多3层。', '理事长的完美谢幕：进行一次攻击；若拥有护盾，必定暴击并造成1.5倍伤害。'];
     case 'ren':
-      return level >= 2 ? ['被动：生命值额外+50。', '无主动技能。'] : ['被动：生命值额外+30。', '无主动技能。'];
+      return level >= 3
+        ? ['被动：生命值额外+50，攻击力+5。', '无主动技能。']
+        : level >= 2
+          ? ['被动：生命值额外+50。', '无主动技能。']
+          : ['被动：生命值额外+30。', '无主动技能。'];
     case 'yoshiko':
-      return level >= 3 ? ['被动：攻击附加1层毒；目标已有毒时，攻击额外+3伤害。', '技能：附加4层毒。'] : level >= 2 ? ['被动：攻击附加1层毒。', '技能：附加4层毒。'] : ['被动：攻击附加1层毒。', '技能：附加3层毒。'];
+      return level >= 3
+        ? ['被动：每回合开始时获得5点护盾。', '技能CD1：为一名非自己的友方提供8点护盾。']
+        : level >= 2
+          ? ['被动：每回合开始时获得3点护盾。', '技能CD1：为一名非自己的友方提供8点护盾。']
+          : ['被动：每回合开始时获得3点护盾。', '技能CD1：为一名非自己的友方提供5点护盾。'];
     case 'nozomi':
-      return level >= 2 ? ['被动：每回合开始获得3点护盾。', '技能：给一名非自己的友方8点护盾。'] : ['被动：每回合开始获得3点护盾。', '技能：给一名非自己的友方5点护盾。'];
+      return level >= 4
+        ? ['技能CD1：随机抽取塔罗牌。', '倒吊人：本次技能伤害×2.5。', '命运之轮：造成1.25倍伤害并获得12护盾。', '魔术师：造成1倍伤害并立即再次抽牌；触发后下回合仍可使用技能；每回合最多抽到1次魔术师。']
+        : level >= 3
+          ? ['技能CD1：随机抽取塔罗牌。', '倒吊人：本次技能伤害×2.5。', '命运之轮：造成1.25倍伤害并获得12护盾。', '魔术师：造成1倍伤害并立即再次抽牌；每回合最多抽到1次魔术师。']
+          : level >= 2
+            ? ['技能CD1：随机抽取塔罗牌。', '倒吊人：本次技能伤害×2.5。', '命运之轮：造成1.1倍伤害并获得8护盾。', '魔术师：造成1倍伤害并立即再次抽牌；每回合最多抽到1次魔术师。']
+            : ['技能CD1：随机抽取塔罗牌。', '倒吊人：本次技能伤害×1.75。', '命运之轮：造成1.1倍伤害并获得8护盾。', '魔术师：造成1倍伤害并立即再次抽牌；每回合最多抽到1次魔术师。'];
     case 'kanata':
-      return level >= 5 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+8%。', '技能：造成攻击力100%伤害；50%追加目标当前生命20%，否则追加10%；结算后目标低于30%立即斩杀。'] : level >= 4 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+8%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%；结算后目标低于20%立即斩杀。'] : level >= 3 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+5%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%；结算后目标低于20%立即斩杀。'] : level >= 2 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+5%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%。'] : ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+3%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%。'];
+      return level >= 5 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+8%。', '技能：造成攻击力100%伤害；50%追加目标当前生命20%，否则追加10%；结算后目标低于25%立即斩杀。'] : level >= 4 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+8%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%；结算后目标低于20%立即斩杀。'] : level >= 3 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+5%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%；结算后目标低于20%立即斩杀。'] : level >= 2 ? ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+5%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%。'] : ['被动：每回合给敌人施加1层梦境，最多2层；每层使彼方伤害+3%。', '技能：造成攻击力100%伤害；20%追加目标当前生命20%，否则追加10%。'];
     default:
       return [];
   }
@@ -279,11 +307,13 @@ function getUpgradeEffectLines(templateId: string, level: number): string[] {
 function getUpgradeChangeLines(templateId: string, level: number): string[] {
   const changes: Record<string, Record<number, string[]>> = {
     ayumu: {
-      2: ['全体恢复 5生命 -> 10生命。'],
-      3: ['全体恢复 10生命 -> 15生命，新增解除所有毒层。'],
+      2: ['治疗从单体改为全体。'],
+      3: ['治疗量 10 -> 15。'],
+      4: ['移除技能CD。'],
     },
     rina: {
-      2: ['追加攻击概率 30% -> 50%，新增获得10护盾。'],
+      2: ['战斗开始时获得10点护盾。'],
+      3: ['追加攻击概率 50% -> 75%。'],
     },
     nico: {
       2: ['被动攻击力成长 +3 -> +4。'],
@@ -293,7 +323,8 @@ function getUpgradeChangeLines(templateId: string, level: number): string[] {
     },
     kotori: {
       2: ['暴击率 30% -> 50%。'],
-      3: ['新增额外造成10点真实伤害。'],
+      3: ['攻击时先摧毁目标所有护盾，再计算伤害。'],
+      4: ['攻击额外附加10点真实伤害。'],
     },
     keke: {
       2: ['解锁可可重击：10%造成3倍伤害，90%造成1.75倍伤害。'],
@@ -302,37 +333,47 @@ function getUpgradeChangeLines(templateId: string, level: number): string[] {
       5: ['超级变身攻击力 +3 -> +5；可可重击提高为10%造成5倍，90%造成3.3倍。'],
     },
     you: {
-      2: ['易损倍率 2倍 -> 2.5倍。'],
+      2: ['易损伤害 1.5倍 -> 2倍。'],
+      3: ['易损伤害 2倍 -> 2.5倍。'],
     },
     eli: {
-      2: ['全体攻击力 +2 -> +3。'],
-      3: ['全体攻击力 +3 -> +4，新增速度+2。'],
+      2: ['保证绘里成为玩家方第一个行动单位。'],
+      3: ['全体友方攻击力 +2 -> +4。'],
+      4: ['绘里不再普通攻击，改为指定一名友方立即普通攻击。'],
     },
     mari: {
       2: ['开场获得2层战意；每层护盾为0.5。'],
-      3: ['每次攻击和释放技能获得1层战意；每层护盾 0.5 -> 1。'],
-      4: ['新增技能伤害每层战意+3%。'],
-      5: ['战意上限7层，达到7层时直接斩杀目标。'],
+      3: ['每层战意每回合提供 0.5护盾/0.5攻击 -> 2护盾/1攻击。'],
+      4: ['维持战意体系成长。'],
+      5: ['解锁4级战意；4级战意下技能追加队友攻击力总和65%的伤害。'],
     },
     ren: {
       2: ['额外生命 +30 -> +50。'],
+      3: ['攻击力 +5。'],
     },
     yoshiko: {
-      2: ['技能附加毒层 3层 -> 4层。'],
-      3: ['目标已有毒时，攻击额外+3伤害。'],
+      2: ['堕天守护提供的护盾 5 -> 8。'],
+      3: ['每回合开始时获得的护盾 3 -> 5。'],
     },
     nozomi: {
-      2: ['给友方护盾 5 -> 8。'],
+      2: ['倒吊人伤害 1.75倍 -> 2.5倍。'],
+      3: ['命运之轮伤害 1.1倍 -> 1.25倍，护盾 8 -> 12。'],
+      4: ['魔术师触发后，下回合仍可使用技能。'],
     },
     kanata: {
       2: ['每层梦境伤害 +3% -> +5%。'],
       3: ['技能新增：结算后目标低于20%立即斩杀。'],
       4: ['每层梦境伤害 +5% -> +8%。'],
-      5: ['追加当前生命20%的概率 20% -> 50%；斩杀线 20% -> 30%。'],
+      5: ['追加当前生命20%的概率 20% -> 50%；斩杀线 20% -> 25%。'],
     },
   };
 
   return changes[templateId]?.[level] ?? getUpgradeEffectLines(templateId, level);
+}
+
+function getEnhancementChangeLines(templateId: string, level: number): string[] {
+  const lines = getUpgradeChangeLines(templateId, level).filter((line) => !line.includes('维持'));
+  return lines.length > 0 ? lines : ['仅提升等级。'];
 }
 
 function HighlightText({ text }: { text: string }) {
@@ -343,6 +384,34 @@ function HighlightText({ text }: { text: string }) {
       {text.split(pattern).map((part, index) =>
         exactPattern.test(part) ? <span className="value-highlight" key={`${part}-${index}`}>{part}</span> : part,
       )}
+    </>
+  );
+}
+
+function HighlightChangedValues({ text, baseText }: { text: string; baseText: string }) {
+  const pattern = /(LV\d+|CD\d+|[+-]?\d+(?:\.\d+)?倍|[+-]?\d+(?:\.\d+)?%|[+-]?\d+(?:\.\d+)?)/g;
+  const exactPattern = /^(LV\d+|CD\d+|[+-]?\d+(?:\.\d+)?倍|[+-]?\d+(?:\.\d+)?%|[+-]?\d+(?:\.\d+)?)$/;
+  const baseValueCounts = new Map<string, number>();
+
+  for (const value of baseText.match(pattern) ?? []) {
+    baseValueCounts.set(value, (baseValueCounts.get(value) ?? 0) + 1);
+  }
+
+  return (
+    <>
+      {text.split(pattern).map((part, index) => {
+        if (!exactPattern.test(part)) {
+          return part;
+        }
+
+        const remainingBaseCount = baseValueCounts.get(part) ?? 0;
+        if (remainingBaseCount > 0) {
+          baseValueCounts.set(part, remainingBaseCount - 1);
+          return part;
+        }
+
+        return <span className="value-highlight" key={`${part}-${index}`}>{part}</span>;
+      })}
     </>
   );
 }
@@ -368,9 +437,27 @@ function UpgradePreview({ template }: { template: CharacterTemplate }) {
   );
 }
 
+function getCompactAbilityDescription(description: string) {
+  const upgradeStarts = [
+    description.search(/(?:^|[。；;]\s*)(?:LV|Lv|lv)\d/),
+    description.search(/(?:^|[。；;]\s*)高等级/),
+  ].filter((index) => index >= 0);
+
+  if (upgradeStarts.length === 0) {
+    return description;
+  }
+
+  return description
+    .slice(0, Math.min(...upgradeStarts))
+    .trim()
+    .replace(/[，,；;：:、\s]+$/, '')
+    .replace(/[。.!！?？]+$/, '');
+}
+
 function App() {
   const [run, setRun] = useState<RunState>(() => createRun());
   const [musicMuted, setMusicMuted] = useState(false);
+  const [shopSelectedOffer, setShopSelectedOffer] = useState<CharacterTemplate | null>(null);
 
   const currentNode = useMemo(
     () => run.map.find((node) => node.id === run.currentNodeId) ?? null,
@@ -378,6 +465,12 @@ function App() {
   );
 
   const aliveTeam = run.team.filter((member) => !member.injured && member.hp > 0);
+  const shopPreviewTeam = useMemo(() => {
+    if (run.screen !== 'shop' || !shopSelectedOffer) {
+      return run.team;
+    }
+    return [...run.team, createAlly(shopSelectedOffer)];
+  }, [run.screen, run.team, shopSelectedOffer]);
   const audioRefs = useRef<Partial<Record<MusicKey | SfxKey, HTMLAudioElement>>>({});
   const audioUnlockedRef = useRef(false);
   const currentMusicRef = useRef<MusicKey | null>(null);
@@ -459,6 +552,17 @@ function App() {
   useEffect(() => {
     playMusic(getMusicKey(run));
   }, [run.screen, run.battle?.type, musicMuted]);
+
+  useEffect(() => {
+    if (run.screen !== 'shop') {
+      setShopSelectedOffer(null);
+      return;
+    }
+
+    if (shopSelectedOffer && !run.shopOffers.some((offer) => offer.id === shopSelectedOffer.id)) {
+      setShopSelectedOffer(null);
+    }
+  }, [run.screen, run.shopOffers, shopSelectedOffer]);
 
   function toggleMusic() {
     unlockAudio();
@@ -577,19 +681,14 @@ function App() {
           result: null,
           restHealUsed: false,
           restReviveUsed: false,
+          bossRetrySnapshot: battleType === 'boss' ? { team: previous.team.map((member) => ({ ...member })), battle: { ...battle, enemies: battle.enemies.map((enemy) => ({ ...enemy })) } } : null,
           eventLog: [...previous.eventLog, `进入${NODE_LABELS[node.type]}节点。`],
         };
       }
 
       if (node.type === 'shop') {
         const ownedIds = new Set(previous.team.map((member) => member.templateId));
-        const availableOffers = CHARACTER_POOL.filter((character) => !ownedIds.has(character.id));
-        const legendaryOffers = availableOffers.filter((character) => character.rarity === 'legendary');
-        const nonLegendaryOffers = availableOffers.filter((character) => character.rarity !== 'legendary');
-        const guaranteedLegendary = previous.boss.bossTier >= 2 ? sample(legendaryOffers, 1) : [];
-        const shopOffers = guaranteedLegendary.length > 0
-          ? [...guaranteedLegendary, ...sample(nonLegendaryOffers, 2)]
-          : sample(availableOffers, 3);
+        const shopOffers = createShopOffers(previous.boss.bossTier, ownedIds);
 
         return {
           ...previous,
@@ -617,7 +716,7 @@ function App() {
 
   function advanceAfterCurrentNode(previous: RunState, teamInput = previous.team): RunState {
     if (!previous.currentNodeId) {
-      return { ...previous, screen: 'map', pendingEnhance: null, pendingBossVictory: false };
+      return { ...previous, screen: 'map', pendingEnhance: null, enhanceReady: false, pendingBossVictory: false };
     }
 
     const team = applyPostNodePassives(teamInput);
@@ -647,7 +746,9 @@ function App() {
         restHealUsed: false,
         restReviveUsed: false,
         pendingEnhance: null,
+        enhanceReady: false,
         pendingBossVictory: false,
+        bossRetrySnapshot: null,
         eventLog: [...previous.eventLog, ...completionLog, `进入第${nextTier}层。`],
       };
     }
@@ -664,12 +765,51 @@ function App() {
       restHealUsed: false,
       restReviveUsed: false,
       pendingEnhance: null,
+      enhanceReady: false,
       pendingBossVictory: false,
+      bossRetrySnapshot: null,
       eventLog: [...previous.eventLog, ...completionLog],
     };
   }
   function finishCurrentNode() {
     setRun((previous) => advanceAfterCurrentNode(previous));
+  }
+
+  function closeBattleStatsModal() {
+    setRun((previous) => ({
+      ...previous,
+      battleStatsOpen: false,
+      enhanceReady: Boolean(previous.pendingEnhance && previous.battle?.phase === 'won'),
+    }));
+  }
+
+  function retryBossBattle() {
+    setRun((previous) => {
+      if (!previous.bossRetrySnapshot || previous.battle?.type !== 'boss' || previous.battle.phase !== 'lost') {
+        return previous;
+      }
+
+      const snapshot = previous.bossRetrySnapshot;
+      return {
+        ...previous,
+        screen: 'battle',
+        team: snapshot.team.map((member) => ({ ...member })),
+        battle: {
+          ...snapshot.battle,
+          enemies: snapshot.battle.enemies.map((enemy) => ({ ...enemy })),
+          selectedIds: [],
+          phase: 'select',
+          runtime: {},
+          stats: {},
+        },
+        result: null,
+        battleStatsOpen: false,
+        pendingEnhance: null,
+        enhanceReady: false,
+        pendingBossVictory: false,
+        eventLog: [...previous.eventLog, '重开Boss战。'],
+      };
+    });
   }
 
   function continueFromBlessing() {
@@ -745,6 +885,7 @@ function App() {
           pendingEnhance: canEnhance
             ? { source: battle.type === 'boss' ? 'boss' : 'elite', cost: battle.type === 'boss' ? 0 : ENHANCE_COST, free: battle.type === 'boss' }
             : null,
+          enhanceReady: false,
         };
       }
 
@@ -754,6 +895,7 @@ function App() {
           team,
           battle,
           battleStatsOpen: true,
+          enhanceReady: false,
           screen: 'loss',
         };
       }
@@ -793,16 +935,18 @@ function App() {
           const currentLevel = member.upgradeLevel ?? 1;
           const nextLevel = Math.min(maxUpgradeLevel(member.rarity), currentLevel + 1) as Character['upgradeLevel'];
           const renHpBonus = member.templateId === 'ren' && currentLevel === 1 && nextLevel >= 2 ? 20 : 0;
+          const renAttackBonus = member.templateId === 'ren' && currentLevel === 2 && nextLevel >= 3 ? 5 : 0;
           return {
             ...member,
             upgradeLevel: nextLevel,
             maxHp: member.maxHp + renHpBonus,
             hp: member.hp + renHpBonus,
+            attack: member.attack + renAttackBonus,
           };
         });
       }
 
-      const nextState = { ...previous, gold: nextGold, team: nextTeam, pendingEnhance: null };
+      const nextState = { ...previous, gold: nextGold, team: nextTeam, pendingEnhance: null, enhanceReady: false };
       if (source === 'boss') {
         return { ...nextState, screen: 'battle', pendingBossVictory: true };
       }
@@ -817,7 +961,7 @@ function App() {
         return previous;
       }
 
-      const nextState = { ...previous, pendingEnhance: null };
+      const nextState = { ...previous, pendingEnhance: null, enhanceReady: false };
       if (previous.pendingEnhance.source === 'boss') {
         return { ...nextState, screen: 'battle', pendingBossVictory: true };
       }
@@ -941,35 +1085,24 @@ function App() {
           : 'scene-home';
 
   return (
-    <div className={`app-shell game-shell ${sceneClass} ${run.screen === 'map' ? 'map-hud-shell' : ''} ${run.screen === 'battle' ? 'battle-shell' : ''}`}>
+    <div className={`app-shell game-shell ${sceneClass} ${run.screen === 'map' ? 'map-hud-shell' : ''} ${run.screen === 'battle' ? 'battle-shell' : ''} ${run.screen === 'shop' ? 'shop-shell' : ''}`}>
       <MusicToggleButton muted={musicMuted} onToggle={toggleMusic} className="floating-music-toggle" />
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">非商用个人 Beta</p>
-          <h1>LoveLive Roguelike Beta</h1>
-        </div>
-        <div className="run-stats" aria-label="当前资源">
-          <span>金币 {run.gold}</span>
-          <span>伙伴 {run.team.length}</span>
-          <span>可出战 {aliveTeam.length}</span>
-        </div>
-      </header>
+      {run.screen !== 'shop' && (
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">非商用个人 Beta</p>
+            <h1>DreamStage</h1>
+          </div>
+          <div className="run-stats" aria-label="当前资源">
+            <span>金币 {run.gold}</span>
+            <span>伙伴 {run.team.length}</span>
+            <span>可出战 {aliveTeam.length}</span>
+          </div>
+        </header>
+      )}
 
       <main className="main-layout">
-        <aside className="side-panel">
-            <div className="panel-heading">
-              <h2>队伍</h2>
-              <button className="ghost-button" onClick={resetRun}>
-                新一局
-              </button>
-            </div>
-            <div className="team-list">
-              {run.team.map((member) => (
-                <CompactCharacter key={member.id} character={member} />
-              ))}
-            </div>
-            <BondPanel team={run.team} />
-          </aside>
+        <CompactRunSidePanel team={shopPreviewTeam} onRestart={resetRun} />
 
         <section className="screen-panel">
           {run.screen === 'map' && <MapScreen nodes={run.map} boss={run.boss} team={run.team} stats={run.runStats} gold={run.gold} musicMuted={musicMuted} onToggleMusic={toggleMusic} onEnter={enterNode} onOpenStats={() => setRun((previous) => ({ ...previous, statsOpen: true }))} eventLog={run.eventLog} onRestart={resetRun} />}
@@ -979,7 +1112,7 @@ function App() {
               battle={run.battle}              boss={run.boss}
               gold={run.gold}
               team={run.team}
-              pendingEnhance={run.pendingEnhance}
+              pendingEnhance={run.enhanceReady ? run.pendingEnhance : null}
               pendingBossVictory={run.pendingBossVictory}
               onContinue={finishCurrentNode}
               onToggleSelection={toggleBattleSelection}              onStart={startBattle}
@@ -998,6 +1131,8 @@ function App() {
             <ShopScreen
               gold={run.gold}
               offers={run.shopOffers}
+              selectedOffer={shopSelectedOffer}
+              onSelectOffer={setShopSelectedOffer}
               onBuy={buyCharacter}
               onLeave={finishCurrentNode}
             />
@@ -1038,6 +1173,7 @@ function App() {
               enemies={run.battle?.enemies ?? []}
               stats={run.battle?.stats}
               team={run.team}
+              onRetryBattle={run.battle?.type === 'boss' && run.bossRetrySnapshot ? retryBossBattle : undefined}
               onRestart={resetRun}
             />
           )}
@@ -1049,7 +1185,8 @@ function App() {
           phase={run.battle.phase}
           stats={run.battle.stats}
           team={run.team}
-          onClose={() => setRun((previous) => ({ ...previous, battleStatsOpen: false }))}
+          primaryLabel={run.pendingEnhance && run.battle.phase === 'won' ? '进入强化' : '返回'}
+          onClose={closeBattleStatsModal}
         />
       )}
       {run.statsOpen && (
@@ -1081,19 +1218,10 @@ function StartScreen({ onStart }: { onStart: () => void }) {
   return (
     <main className="start-page">
       <div className="start-copy">
-        <p className="eyebrow">LoveLive Roguelike Beta</p>
-        <h1>开始巡演</h1>
-        <p>选择初始偶像，规划成长路线，挑战三层巡演Boss！</p>
-        <ul className="start-feature-list" aria-label="巡演目标">
-          <li><span>♪</span>选择你的偶像</li>
-          <li><span>★</span>打造独一无二的演出队伍</li>
-          <li><span>♛</span>挑战三层巡演Boss</li>
-        </ul>
+        <img className="start-logo" src="/ui/start/dream-stage-logo.png" alt="DreamStage" />
       </div>
       <button className="school-gate-start" type="button" onClick={onStart} aria-label="开始巡演">
-        <span className="school-gate-name">私立虹咲学园</span>
-        <strong>开始巡演</strong>
-        <small>点击校门，开启巡演之旅</small>
+        <img src="/ui/start/start-tour-button.png" alt="" />
       </button>
     </main>
   );
@@ -1125,7 +1253,6 @@ interface BondItemProps {
   name: string;
   count: number;
   total: number;
-  subtitle: string;
   details: string[];
   memberIds: string[];
   ownedIds: Set<string>;
@@ -1134,7 +1261,7 @@ interface BondItemProps {
   logoSrc?: string;
 }
 
-function BondItem({ name, count, total, subtitle, details, memberIds, ownedIds, active, secondary = false, logoSrc }: BondItemProps) {
+function BondItem({ name, count, total, details, memberIds, ownedIds, active, secondary = false, logoSrc }: BondItemProps) {
   return (
     <div className={`bond-item ${active ? 'active' : ''} ${secondary && active ? 'secondary-active' : ''}`}>
       <div className="bond-item-heading">
@@ -1143,12 +1270,13 @@ function BondItem({ name, count, total, subtitle, details, memberIds, ownedIds, 
           <strong>
             {name} {count}/{total}
           </strong>
-          <span>{subtitle}</span>
         </div>
       </div>
-      {details.map((detail) => (
-        <small key={detail}>{detail}</small>
-      ))}
+      <div className="bond-item-details">
+        {details.map((detail) => (
+          <small key={detail}>{detail}</small>
+        ))}
+      </div>
       <BondMemberPopover memberIds={memberIds} ownedIds={ownedIds} />
     </div>
   );
@@ -1169,6 +1297,105 @@ function BondTag({ className = '', label, memberIds, ownedIds, summary }: BondTa
     </div>
   );
 }
+
+function CompactRunSidePanel({ team, onRestart }: { team: Character[]; onRestart: () => void }) {
+  const slots = Array.from({ length: 4 }, (_, index) => team[index] ?? null);
+  const ownedIds = new Set(team.map((member) => member.templateId));
+  const primaryBonds = getActiveBonds(team).filter((bond) => bond.count > 0);
+  const secondaryBonds = getActiveSecondaryBonds(team).filter((bond) => bond.count > 0);
+  const visibleBonds = [
+    ...primaryBonds.map((bond) => ({
+      id: bond.group.id,
+      name: bond.group.name,
+      count: bond.count,
+      total: 3,
+      active: bond.level > 0,
+      secondary: false,
+      logoSrc: BOND_LOGO_SRC[bond.group.id],
+      memberIds: bond.group.memberIds,
+      details: [
+        `2人：${bond.group.level2Description}`,
+        `3人：${bond.group.level3Description}`,
+      ],
+    })),
+    ...secondaryBonds.map((bond) => ({
+      id: bond.bond.id,
+      name: bond.bond.name,
+      count: bond.count,
+      total: 2,
+      active: bond.active,
+      secondary: true,
+      logoSrc: BOND_LOGO_SRC[bond.bond.id],
+      memberIds: bond.bond.memberIds,
+      details: [bond.bond.description],
+    })),
+  ].sort((left, right) => Number(right.active) - Number(left.active) || right.count - left.count || right.total - left.total).slice(0, 6);
+
+  return (
+    <aside className="side-panel compact-run-side-panel">
+      <section className="hud-card team-dock">
+        <div className="hud-card-heading">
+          <h3>当前队伍</h3>
+          <span>{team.length}/4</span>
+        </div>
+        <div className="team-dock-grid">
+          {slots.map((member, index) =>
+            member ? (
+              <div className={`team-dock-member rarity-${member.rarity} ${member.injured ? 'injured' : ''}`} key={member.id} tabIndex={0}>
+                <Avatar character={member} label={member.name} />
+                <span>{member.injured ? '重伤' : `${member.hp}/${member.maxHp}`}</span>
+                <div className="dock-popover team-dock-popover">
+                  <strong>{member.name}</strong>
+                  <small>{RARITY_LABELS[member.rarity]} · {GROUP_LABELS[member.group]}{member.role ? ` · ${ROLE_LABELS[member.role]}` : ''} · LV{member.upgradeLevel ?? 1}</small>
+                  <small>HP {member.hp}/{member.maxHp} · 攻 {member.attack} · 速 {member.speed}</small>
+                  {getUpgradeEffectLines(member.templateId, member.upgradeLevel ?? 1).map((line) => <span key={line}>{line}</span>)}
+                </div>
+              </div>
+            ) : (
+              <div className="team-empty-slot" key={`empty-${index}`}>
+                <span>＋</span>
+              </div>
+            ),
+          )}
+        </div>
+        <button className="hud-wide-button" type="button" onClick={onRestart}>新一局</button>
+      </section>
+      <section className="hud-card bond-progress-dock">
+        <div className="hud-card-heading">
+          <h3>羁绊进度</h3>
+          <span>i</span>
+        </div>
+        <div className="bond-progress-list">
+          {visibleBonds.map((bond) => (
+            <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'}`} key={bond.id} tabIndex={0}>
+              <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
+              <em>{bond.count}/{bond.total}</em>
+              <div className="dock-popover bond-dock-popover">
+                <strong>{bond.name} {bond.count}/{bond.total}</strong>
+                {bond.details.map((detail) => <span key={detail}>{detail}</span>)}
+                <div className="dock-member-grid">
+                  {bond.memberIds.map((memberId) => {
+                    const member = getTemplateById(memberId);
+                    if (!member) {
+                      return null;
+                    }
+                    return (
+                      <div className={`bond-member ${ownedIds.has(member.id) ? 'owned' : 'missing'}`} key={member.id}>
+                        <Avatar character={member} label={member.name} small />
+                        <span>{member.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
 function BondPanel({ team }: { team: Character[] }) {
   const ownedIds = new Set(team.map((member) => member.templateId));
   const bonds = getActiveBonds(team).filter((bond) => bond.count > 0);
@@ -1190,8 +1417,8 @@ function BondPanel({ team }: { team: Character[] }) {
                   details={
                     bond.level >= 2
                       ? [
-                          `2人：${bond.group.level2Name}，${bond.group.level2Description}`,
-                          ...(bond.level >= 3 ? [`3人：${bond.group.level3Name}，${bond.group.level3Description}`] : []),
+                          `2人：${bond.group.level2Description}`,
+                          ...(bond.level >= 3 ? [`3人：${bond.group.level3Description}`] : []),
                         ]
                       : ['再集齐1名成员激活2人羁绊。']
                   }
@@ -1200,7 +1427,6 @@ function BondPanel({ team }: { team: Character[] }) {
                   logoSrc={BOND_LOGO_SRC[bond.group.id]}
                   name={bond.group.name}
                   ownedIds={ownedIds}
-                  subtitle={bond.group.theme}
                   total={3}
                 />
               ))}
@@ -1213,14 +1439,13 @@ function BondPanel({ team }: { team: Character[] }) {
                 <BondItem
                   active={activeBond.active}
                   count={activeBond.count}
-                  details={activeBond.active ? [] : ['再集齐1名成员激活。']}
+                  details={activeBond.active ? [activeBond.bond.description] : ['再集齐1名成员激活。']}
                   key={activeBond.bond.id}
                   memberIds={activeBond.bond.memberIds}
                   logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
                   name={activeBond.bond.name}
                   ownedIds={ownedIds}
                   secondary
-                  subtitle={activeBond.bond.description}
                   total={2}
                 />
               ))}
@@ -1233,7 +1458,7 @@ function BondPanel({ team }: { team: Character[] }) {
 }
 
 function DraftScreen({ candidates, selectedIds, onToggle, onReroll, onConfirm }: DraftScreenProps) {
-  const visibleCandidates = candidates.slice(0, 4);
+  const visibleCandidates = candidates.slice(0, 3);
   const selectedCandidates = visibleCandidates.filter((candidate) => selectedIds.includes(candidate.id));
 
   return (
@@ -1242,7 +1467,7 @@ function DraftScreen({ candidates, selectedIds, onToggle, onReroll, onConfirm }:
         <div className="screen-heading">
           <p className="eyebrow">初始伙伴</p>
           <h2>选择 2 名偶像开局</h2>
-          <p>本次候选 {visibleCandidates.length}/4，已选择 {selectedIds.length}/2。</p>
+          <p>本次候选 {visibleCandidates.length}/3，已选择 {selectedIds.length}/2。</p>
         </div>
         <div className="draft-actions">
           <button className="secondary-button" onClick={onReroll}>
@@ -1285,15 +1510,14 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
             active={bond.level > 0}
             count={bond.count}
             details={[
-              `2人：${bond.group.level2Name}，${bond.group.level2Description}`,
-              `3人：${bond.group.level3Name}，${bond.group.level3Description}`,
+              `2人：${bond.group.level2Description}`,
+              `3人：${bond.group.level3Description}`,
             ]}
             key={bond.group.id}
             memberIds={bond.group.memberIds}
             logoSrc={BOND_LOGO_SRC[bond.group.id]}
             name={bond.group.name}
             ownedIds={ownedIds}
-            subtitle={bond.group.theme}
             total={3}
           />
         ))}
@@ -1301,14 +1525,13 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
           <BondItem
             active={activeBond.active}
             count={activeBond.count}
-            details={[]}
+            details={[activeBond.bond.description]}
             key={activeBond.bond.id}
             memberIds={activeBond.bond.memberIds}
             logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
             name={activeBond.bond.name}
             ownedIds={ownedIds}
             secondary
-            subtitle={activeBond.bond.description}
             total={2}
           />
         ))}
@@ -1383,14 +1606,17 @@ function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardP
           </span>
         </div>
         {template.passive && (
-          <div className="draft-ability">
+          <>
+          <div className="draft-ability skill-preview-trigger" tabIndex={0}>
             <span>被动</span>
-            <p><HighlightText text={`被动「${template.passive.name}」：${template.passive.description}`} /></p>
+            <p>{`被动「${template.passive.name}」：${getCompactAbilityDescription(template.passive.description)}`}</p>
           </div>
+          <UpgradePreview template={template} />
+          </>
         )}
         <div className="draft-ability skill-preview-trigger" tabIndex={0}>
           <span>技能</span>
-          <p><HighlightText text={`技能「${template.skill.name}」：${template.skill.description}`} /></p>
+          <p>{`技能「${template.skill.name}」：${getCompactAbilityDescription(template.skill.description)}`}</p>
         </div>
         <UpgradePreview template={template} />
         <em>{selected ? '已选择' : '点击选择'}</em>
@@ -1452,7 +1678,8 @@ function BattleTeamPanel({ team }: { team: Character[] }) {
       name: bond.group.name,
       count: bond.count,
       total: 3,
-      description: bond.level >= 3 ? bond.group.level3Description : bond.level >= 2 ? bond.group.level2Description : bond.group.theme,
+      active: bond.level > 0,
+      description: bond.level >= 3 ? bond.group.level3Description : bond.level >= 2 ? bond.group.level2Description : `${bond.group.level2Description} ${bond.group.level3Description}`,
       logoSrc: BOND_LOGO_SRC[bond.group.id],
     })),
     ...secondaryBonds.map((activeBond) => ({
@@ -1460,10 +1687,11 @@ function BattleTeamPanel({ team }: { team: Character[] }) {
       name: activeBond.bond.name,
       count: activeBond.count,
       total: 2,
+      active: activeBond.active,
       description: activeBond.bond.description,
       logoSrc: BOND_LOGO_SRC[activeBond.bond.id],
     })),
-  ];
+  ].sort((left, right) => Number(right.active) - Number(left.active) || right.count - left.count || right.total - left.total);
 
   return (
     <aside className="battle-left-panel">
@@ -1491,7 +1719,7 @@ function BattleTeamPanel({ team }: { team: Character[] }) {
         <div className="battle-bond-logo-grid">
           {visibleBonds.length > 0 ? (
             visibleBonds.map((bond) => (
-              <div className="battle-bond-logo-item" key={bond.id} tabIndex={0}>
+              <div className={`battle-bond-logo-item ${bond.active ? 'active' : 'inactive'}`} key={bond.id} tabIndex={0}>
                 <img src={bond.logoSrc} alt="" />
                 <div className="battle-mini-popover">
                   <strong>{bond.name} {bond.count}/{bond.total}</strong>
@@ -1512,19 +1740,17 @@ function BattleSlotStrip({ selectedMembers, slots }: { selectedMembers: Characte
   const slotItems = Array.from({ length: slots }, (_, index) => selectedMembers[index] ?? null);
 
   return (
-    <section className="battle-slot-strip" aria-label="出战位">
+    <section className="battle-slot-strip" aria-label="出战位" style={{ '--slot-count': slots } as CSSProperties}>
       {slotItems.map((member, index) => (
         <div className={`battle-slot ${member ? 'filled' : ''}`} key={member?.id ?? `slot-${index}`}>
           {member ? (
             <>
               <Avatar character={member} label={member.name} />
-              <strong>{member.name}</strong>
               <span>{member.hp}/{member.maxHp} HP</span>
             </>
           ) : (
             <>
               <b>＋</b>
-              <strong>出战位</strong>
               <span>空缺</span>
             </>
           )}
@@ -1592,7 +1818,16 @@ function BattleScreen({ battle, boss, gold, team, pendingEnhance, pendingBossVic
               {battle.phase === 'relay' && displayEnemy && <span>{displayEnemy.name} 剩余 {displayEnemy.hp}/{displayEnemy.maxHp} HP</span>}
             </div>
 
-            <BattleSlotStrip selectedMembers={selectedMembers} slots={battle.slots} />
+            <div className="battle-selection-top">
+              <BattleSlotStrip selectedMembers={selectedMembers} slots={battle.slots} />
+              {(battle.phase === 'select' || battle.phase === 'relay') && (
+                <div className="battle-slot-actions">
+                  <button className="primary-button battle-start-button" disabled={!canStart} onClick={onStart}>
+                    {battle.phase === 'relay' ? '开始接力战斗' : '开始自动战斗'}
+                  </button>
+                </div>
+              )}
+            </div>
 
             {(battle.phase === 'select' || battle.phase === 'relay') && (
               <div className="battle-candidate-grid">
@@ -1617,11 +1852,6 @@ function BattleScreen({ battle, boss, gold, team, pendingEnhance, pendingBossVic
           </section>
 
           <div className="battle-bottom-actions">
-            {(battle.phase === 'select' || battle.phase === 'relay') && (
-              <button className="primary-button battle-start-button" disabled={!canStart} onClick={onStart}>
-                {battle.phase === 'relay' ? '开始接力战斗' : '开始自动战斗'}
-              </button>
-            )}
             {canContinueRoute && (
               <button className="primary-button battle-start-button" onClick={onContinue}>继续路线</button>
             )}
@@ -1654,14 +1884,17 @@ function BattleScreen({ battle, boss, gold, team, pendingEnhance, pendingBossVic
 interface ShopScreenProps {
   gold: number;
   offers: CharacterTemplate[];
+  selectedOffer: CharacterTemplate | null;
+  onSelectOffer: (template: CharacterTemplate | null) => void;
   onBuy: (template: CharacterTemplate) => void;
   onLeave: () => void;
 }
 
-function ShopScreen({ gold, offers, onBuy, onLeave }: ShopScreenProps) {
+function ShopScreen({ gold, offers, selectedOffer, onSelectOffer, onBuy, onLeave }: ShopScreenProps) {
   const [pendingOffer, setPendingOffer] = useState<CharacterTemplate | null>(null);
   const pendingOfferAvailable = pendingOffer ? offers.some((offer) => offer.id === pendingOffer.id) : false;
   const canConfirmPurchase = Boolean(pendingOffer && pendingOfferAvailable && gold >= pendingOffer.price);
+  const canBuySelectedOffer = Boolean(selectedOffer && offers.some((offer) => offer.id === selectedOffer.id) && gold >= selectedOffer.price);
 
   function confirmPurchase() {
     if (!pendingOffer || !canConfirmPurchase) {
@@ -1669,27 +1902,45 @@ function ShopScreen({ gold, offers, onBuy, onLeave }: ShopScreenProps) {
     }
     onBuy(pendingOffer);
     setPendingOffer(null);
+    onSelectOffer(null);
   }
 
   return (
-    <div className="flow-screen">
-      <div className="screen-heading">
-        <p className="eyebrow">商店</p>
-        <h2>招募伙伴</h2>
-        <p>商店只出售角色。购买后立即加入队伍并保持满生命值。</p>
+    <div className="flow-screen shop-screen">
+      <div className="shop-header">
+        <div className="shop-resource-bar">
+          <div className="shop-resource-pill gold-pill">
+            <span>◎</span>
+            <strong>金币 {gold}</strong>
+          </div>
+          {selectedOffer && (
+            <button
+              className="primary-button shop-buy-button"
+              type="button"
+              disabled={!canBuySelectedOffer}
+              onClick={() => setPendingOffer(selectedOffer)}
+            >
+              购买 {selectedOffer.price}金币
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="shop-recruit-panel">
+        <div className="shop-title-block">
+          <h2>✦ 招募伙伴 ✦</h2>
+          <p>招募新伙伴加入队伍，开启新的巡演之旅！</p>
+        </div>
       {offers.length > 0 ? (
-        <div className="character-grid">
+        <div className="shop-offer-grid">
           {offers.map((offer) => (
-            <TemplateCard
+            <ShopOfferCard
               key={offer.id}
               template={offer}
-              footer={`${offer.price}金币`}
-              disabled={gold < offer.price}
+              selected={selectedOffer?.id === offer.id}
+              unaffordable={gold < offer.price}
               onClick={() => {
-                if (gold >= offer.price) {
-                  setPendingOffer(offer);
-                }
+                onSelectOffer(offer);
               }}
             />
           ))}
@@ -1697,11 +1948,10 @@ function ShopScreen({ gold, offers, onBuy, onLeave }: ShopScreenProps) {
       ) : (
         <div className="empty-state">当前可招募角色已经全部加入队伍。</div>
       )}
-      <div className="action-row">
-        <button className="primary-button" onClick={onLeave}>
-          离开商店
-        </button>
       </div>
+      <button className="primary-button shop-leave-button" onClick={onLeave}>
+        离开商店
+      </button>
       {pendingOffer && (
         <div className="modal-backdrop">
           <div className="reward-modal shop-confirm-modal">
@@ -1716,7 +1966,7 @@ function ShopScreen({ gold, offers, onBuy, onLeave }: ShopScreenProps) {
               </div>
             )}
             <div className="shop-confirm-preview">
-              <TemplateCard template={pendingOffer} footer={`${pendingOffer.price}金币`} />
+              <ShopDetailCharacter character={pendingOffer} upgradeMode="changes" />
             </div>
             <div className="action-row">
               <button className="secondary-button" type="button" onClick={() => setPendingOffer(null)}>
@@ -1741,21 +1991,144 @@ interface BlessingScreenProps {
 
 function BlessingScreen({ team, tier, onContinue }: BlessingScreenProps) {
   return (
-    <div className="flow-screen blessing-screen modal-like-screen">
-      <div className="reward-modal blessing-modal-inline">
-        <p className="eyebrow">祝福处</p>
-        <h2>祝福处</h2>
-        <p>所有偶像复活，并且回复生命值。低于50%生命的偶像会恢复到自身生命值的50%。</p>
-        <div className="character-grid compact-grid">
+    <div className="flow-screen blessing-screen">
+      <div className="rest-blessing-panel blessing-panel">
+        <div className="rest-blessing-heading">
+          <div>
+            <p className="eyebrow">祝福处</p>
+            <h2>✦ 祝福处 ✦</h2>
+            <p>Boss战后的温柔祝福：全员解除重伤，生命值至少恢复到最大生命的50%。</p>
+          </div>
+          <div className="blessing-chance-card">
+            <small>本次祝福</small>
+            <strong>全队恢复</strong>
+            <span>自动生效</span>
+          </div>
+        </div>
+
+        <div className="blessing-member-list">
           {team.map((member) => (
-            <CompactCharacter key={member.id} character={member} />
+            <div className={`blessing-member-card rarity-${member.rarity}`} key={member.id}>
+              <Avatar character={member} label={member.name} />
+              <div className="blessing-member-copy">
+                <strong>{member.name}</strong>
+                <span>LV{member.upgradeLevel ?? 1} · {RARITY_LABELS[member.rarity]} · {GROUP_LABELS[member.group]}{member.role ? ` · ${ROLE_LABELS[member.role]}` : ''}</span>
+                <small>{member.hp} / {member.maxHp} HP</small>
+                <div className="hp-track" aria-label={`${member.name}生命值`}>
+                  <span style={{ width: `${Math.max(0, Math.round((member.hp / member.maxHp) * 100))}%` }} />
+                </div>
+              </div>
+              <div className="blessing-status-card">
+                <strong>已祝福</strong>
+                <span>状态已恢复</span>
+              </div>
+            </div>
           ))}
         </div>
-        <button className="primary-button wide-button" onClick={onContinue}>
-          进入第{tier}层
-        </button>
+      </div>
+      <button className="primary-button rest-leave-button" onClick={onContinue}>
+        ✦ 进入第{tier}层 ✦
+      </button>
+    </div>
+  );
+}
+
+function ShopOfferCard({ template, selected, unaffordable, onClick }: { template: CharacterTemplate; selected?: boolean; unaffordable?: boolean; onClick?: () => void }) {
+  return (
+    <button className={`shop-offer-card rarity-${template.rarity} ${selected ? 'selected' : ''} ${unaffordable ? 'unaffordable' : ''}`} onClick={onClick} type="button">
+      <div className="shop-offer-portrait">
+        <img
+          alt=""
+          src={draftImageSrc(template)}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      </div>
+      <div className="shop-offer-body">
+        <h3>{template.name}</h3>
+        <div className="shop-offer-stats">
+          <span>HP <strong>{template.maxHp}</strong></span>
+          <span>攻 <strong>{template.attack}</strong></span>
+          <span>速 <strong>{template.speed}</strong></span>
+        </div>
+      </div>
+      <div className="shop-price-button">
+        <span>◎</span>
+        <strong>{template.price}</strong>
+      </div>
+    </button>
+  );
+}
+
+function ShopDetailModal({ team, offers, onClose }: { team: Character[]; offers: CharacterTemplate[]; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="reward-modal shop-detail-modal">
+        <p className="eyebrow">商店详细</p>
+        <h2>完整信息</h2>
+        <p>这里展示当前队伍与本次可招募角色的完整技能、被动和升级效果。</p>
+        <div className="shop-detail-sections">
+          <section>
+            <h3>当前队伍</h3>
+            <div className="shop-detail-grid">
+              {team.map((member) => <ShopDetailCharacter key={member.id} character={member} />)}
+            </div>
+          </section>
+          <section>
+            <h3>可招募</h3>
+            <div className="shop-detail-grid">
+              {offers.map((offer) => <ShopDetailCharacter key={offer.id} character={offer} />)}
+            </div>
+          </section>
+        </div>
+        <div className="action-row">
+          <button className="primary-button" type="button" onClick={onClose}>关闭</button>
+        </div>
       </div>
     </div>
+  );
+}
+
+function ShopDetailCharacter({ character, upgradeMode = 'full' }: { character: Character | CharacterTemplate; upgradeMode?: 'full' | 'changes' }) {
+  const level = 'upgradeLevel' in character ? character.upgradeLevel : 1;
+  const maxLevel = maxUpgradeLevel(character.rarity);
+  const templateId = 'templateId' in character ? character.templateId : character.id;
+  const upgradeLevels = Array.from({ length: Math.max(0, maxLevel - level) }, (_, index) => level + index + 1);
+
+  return (
+    <article className={`shop-detail-card rarity-${character.rarity}`}>
+      <div className="shop-detail-portrait">
+        <img
+          alt=""
+          src={draftImageSrc(character)}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
+      </div>
+      <div className="shop-detail-copy">
+        <h4>{character.name}</h4>
+        <span>LV{level} · {RARITY_LABELS[character.rarity]} · {GROUP_LABELS[character.group]}{character.role ? ` · ${ROLE_LABELS[character.role]}` : ''}</span>
+        <b>HP {character.maxHp} · 攻 {character.attack} · 速 {character.speed}</b>
+        {character.passive && <p>被动「{character.passive.name}」：{character.passive.description}</p>}
+        <p>技能「{character.skill.name}」：{character.skill.description}</p>
+        <div className="shop-upgrade-lines">
+          <strong>{upgradeMode === 'changes' ? '升级变化' : '升级效果'}</strong>
+          {upgradeMode === 'changes' ? (
+            upgradeLevels.length > 0 ? upgradeLevels.map((targetLevel) => (
+              <small key={targetLevel}>LV{targetLevel}：<HighlightText text={getEnhancementChangeLines(templateId, targetLevel).join('；')} /></small>
+            )) : (
+              <small>已达到最高等级。</small>
+            )
+          ) : (
+            Array.from({ length: maxLevel }, (_, index) => index + 1).map((targetLevel) => (
+              <small key={targetLevel}>LV{targetLevel}：{getUpgradeEffectLines(templateId, targetLevel).join('；') || '基础效果'}</small>
+            ))
+          )}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -1768,7 +2141,7 @@ interface EnhanceModalProps {
 }
 
 function EnhanceModal({ gold, pending, team, onEnhance, onDismiss }: EnhanceModalProps) {
-  const candidates = team.filter((member) => !member.injured && member.hp > 0 && (member.upgradeLevel ?? 1) < maxUpgradeLevel(member.rarity));
+  const candidates = team.filter((member) => (member.upgradeLevel ?? 1) < maxUpgradeLevel(member.rarity));
   const canPay = pending.free || gold >= pending.cost;
   const [selectedId, setSelectedId] = useState(candidates[0]?.id ?? null);
   const selected = candidates.find((member) => member.id === selectedId) ?? null;
@@ -1786,9 +2159,10 @@ function EnhanceModal({ gold, pending, team, onEnhance, onDismiss }: EnhanceModa
             const level = member.upgradeLevel ?? 1;
             const max = maxUpgradeLevel(member.rarity);
             const nextLevel = Math.min(max, level + 1);
+            const changeLines = getEnhancementChangeLines(member.templateId, nextLevel);
             return (
               <button
-                className={`enhance-choice rarity-${member.rarity} ${selectedId === member.id ? 'selected' : ''}`}
+                className={`enhance-choice rarity-${member.rarity} ${selectedId === member.id ? 'selected' : ''} ${member.injured || member.hp <= 0 ? 'injured' : ''}`}
                 disabled={!canPay}
                 key={member.id}
                 onClick={() => setSelectedId(member.id)}
@@ -1798,13 +2172,15 @@ function EnhanceModal({ gold, pending, team, onEnhance, onDismiss }: EnhanceModa
                 <div>
                   <strong>{member.name}</strong>
                   <UpgradeLevelBadge level={level} />
-                  <small>悬浮查看强化效果</small>
+                  {(member.injured || member.hp <= 0) && <small>重伤中，仍可强化</small>}
                 </div>
                 <div className="upgrade-tooltip">
-                  <b>当前效果</b>
-                  {getUpgradeEffectLines(member.templateId, level).map((line) => <span key={`current-${line}`}>{line}</span>)}
-                  <b>升级后</b>
-                  {getUpgradeEffectLines(member.templateId, nextLevel).map((line) => <span key={`next-${line}`}>{line}</span>)}
+                  <b>升级变化：LV{level} → LV{nextLevel}</b>
+                  {changeLines.map((line) => (
+                    <span key={`change-${line}`}>
+                      <HighlightText text={line} />
+                    </span>
+                  ))}
                 </div>
               </button>
             );
@@ -1833,57 +2209,174 @@ interface RestScreenProps {
   onLeave: () => void;
 }
 
+type RestAction = HealType | 'revive';
+
 function RestScreen({ gold, team, healUsed, reviveUsed, onHeal, onRevive, onLeave }: RestScreenProps) {
-  const smallHealAmount = HEAL_OPTIONS.small.amount;
-  const largeHealText = '恢复至满血';
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedAction, setSelectedAction] = useState<RestAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ action: RestAction; targetId: string } | null>(null);
+  const selectedMember = team.find((member) => member.id === selectedId) ?? null;
+  const pendingMember = pendingAction ? team.find((member) => member.id === pendingAction.targetId) ?? null : null;
+
+  const isActionAvailable = (action: RestAction) => {
+    if (action === 'revive') {
+      return !reviveUsed && gold >= REVIVE_COST && team.some((member) => member.injured);
+    }
+    return !healUsed && gold >= HEAL_OPTIONS[action].cost && team.some((member) => !member.injured && member.hp < member.maxHp);
+  };
+
+  const isValidTarget = (action: RestAction, member: Character) => {
+    if (action === 'revive') {
+      return !reviveUsed && member.injured && gold >= REVIVE_COST;
+    }
+    return !healUsed && !member.injured && member.hp < member.maxHp && gold >= HEAL_OPTIONS[action].cost;
+  };
+
+  const getActionLabel = (action: RestAction) => action === 'revive' ? '复活' : HEAL_OPTIONS[action].label;
+  const getActionCost = (action: RestAction) => action === 'revive' ? REVIVE_COST : HEAL_OPTIONS[action].cost;
+  const getActionPreview = (action: RestAction, member: Character) => {
+    if (action === 'revive') {
+      return `复活后恢复到 ${Math.max(1, Math.ceil(member.maxHp * 0.3))}/${member.maxHp} HP。`;
+    }
+    const nextHp = Math.min(member.maxHp, member.hp + HEAL_OPTIONS[action].amount);
+    return `${member.hp}/${member.maxHp} HP → ${nextHp}/${member.maxHp} HP。`;
+  };
+
+  useEffect(() => {
+    if (selectedAction && !isActionAvailable(selectedAction)) {
+      setSelectedAction(null);
+      setPendingAction(null);
+    }
+  }, [gold, healUsed, reviveUsed, selectedAction, team]);
+
+  function chooseAction(action: RestAction) {
+    if (!isActionAvailable(action)) {
+      return;
+    }
+    setSelectedAction(action);
+    setPendingAction(null);
+    setSelectedId(null);
+  }
+
+  function chooseTarget(member: Character) {
+    setSelectedId(member.id);
+    if (!selectedAction || !isValidTarget(selectedAction, member)) {
+      return;
+    }
+    setPendingAction({ action: selectedAction, targetId: member.id });
+  }
+
+  function confirmRestAction() {
+    if (!pendingAction || !pendingMember || !isValidTarget(pendingAction.action, pendingMember)) {
+      return;
+    }
+    if (pendingAction.action === 'revive') {
+      onRevive(pendingMember.id);
+    } else {
+      onHeal(pendingMember.id, pendingAction.action);
+    }
+    setSelectedAction(null);
+    setSelectedId(null);
+    setPendingAction(null);
+  }
+
+  const canSmallHeal = isActionAvailable('small');
+  const canLargeHeal = isActionAvailable('large');
+  const canRevive = isActionAvailable('revive');
 
   return (
-    <div className="flow-screen">
-      <div className="screen-heading">
-        <p className="eyebrow">休息处</p>
-        <h2>治疗一次，复活一次</h2>
-        <p>每个休息处最多执行一次治疗和一次复活。治疗可选小治疗或大治疗；复活恢复60%最大生命。</p>
-      </div>
-      {(healUsed || reviveUsed) && (
-        <div className="empty-state">
-          {healUsed ? '治疗已使用。' : '治疗还可使用。'} {reviveUsed ? '复活已使用。' : '复活还可使用。'}
+    <div className="flow-screen rest-screen">
+      <div className="rest-blessing-panel rest-panel">
+        <div className="rest-blessing-heading">
+          <div>
+            <p className="eyebrow">休息处</p>
+            <h2>☕ 休息处</h2>
+            <p>先选择治疗或复活，再点击目标队员，确认后生效。每个休息处最多治疗一次、复活一次。</p>
+          </div>
+          <div className="rest-usage-card">
+            <small>本次剩余</small>
+            <span className={healUsed ? 'used' : ''}>治疗 {healUsed ? '0/1' : '1/1'}</span>
+            <span className={reviveUsed ? 'used' : ''}>复活 {reviveUsed ? '0/1' : '1/1'}</span>
+          </div>
         </div>
-      )}
-      <div className="rest-list">
-        {team.map((member) => (
-          <div className="rest-row" key={member.id}>
-            <CompactCharacter character={member} />
-            <div className="rest-actions">
-              <button
-                className="secondary-button"
-                disabled={healUsed || member.injured || member.hp >= member.maxHp || gold < HEAL_OPTIONS.small.cost}
-                onClick={() => onHeal(member.id, 'small')}
-              >
-                小治疗 {HEAL_OPTIONS.small.cost}金币 / {smallHealAmount}HP
+
+        <div className="rest-action-cards">
+          <button className={`rest-action-card rest-action-small ${selectedAction === 'small' ? 'selected' : ''}`} disabled={!canSmallHeal} onClick={() => chooseAction('small')} type="button">
+            <strong>小治疗</strong>
+            <img src="/ui/rest-actions/small-heal.png" alt="" />
+            <span>恢复目标 {HEAL_OPTIONS.small.amount} 点生命值。</span>
+            <em>消耗 {HEAL_OPTIONS.small.cost} 金币</em>
+          </button>
+          <button className={`rest-action-card rest-action-large ${selectedAction === 'large' ? 'selected' : ''}`} disabled={!canLargeHeal} onClick={() => chooseAction('large')} type="button">
+            <strong>大治疗</strong>
+            <img src="/ui/rest-actions/large-heal.png" alt="" />
+            <span>恢复目标 {HEAL_OPTIONS.large.amount} 点生命值。</span>
+            <em>消耗 {HEAL_OPTIONS.large.cost} 金币</em>
+          </button>
+          <button className={`rest-action-card rest-action-revive ${selectedAction === 'revive' ? 'selected' : ''}`} disabled={!canRevive} onClick={() => chooseAction('revive')} type="button">
+            <strong>复活</strong>
+            <img src="/ui/rest-actions/revive.png" alt="" />
+            <span>复活一名重伤队员，并恢复30%最大生命。</span>
+            <em>消耗 {REVIVE_COST} 金币</em>
+          </button>
+        </div>
+
+        <div className="rest-team-status" aria-label="队伍状态">
+          <strong>{selectedAction ? `选择${getActionLabel(selectedAction)}目标` : '队伍状态'}</strong>
+          <div className="rest-team-members">
+            {Array.from({ length: 4 }, (_, index) => team[index] ?? null).map((member, index) => (
+              member ? (
+                <button
+                  className={`rest-status-member rarity-${member.rarity} ${selectedId === member.id ? 'selected' : ''} ${member.injured ? 'injured' : ''} ${selectedAction && isValidTarget(selectedAction, member) ? 'targetable' : ''} ${selectedAction && !isValidTarget(selectedAction, member) ? 'not-targetable' : ''}`}
+                  key={member.id}
+                  onClick={() => chooseTarget(member)}
+                  type="button"
+                >
+                  <Avatar character={member} label={member.name} small />
+                  <span>{member.name}</span>
+                  <small>{member.injured ? '重伤' : `${member.hp} / ${member.maxHp}`}</small>
+                  <div className="hp-track" aria-label={`${member.name}生命值`}>
+                    <span style={{ width: `${Math.max(0, Math.round((member.hp / member.maxHp) * 100))}%` }} />
+                  </div>
+                </button>
+              ) : (
+                <div className="rest-status-member empty" key={`empty-${index}`}>
+                  <span>未上阵</span>
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      </div>
+      {pendingAction && pendingMember && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPendingAction(null)}>
+          <section className="reward-modal rest-confirm-modal" role="dialog" aria-modal="true" aria-label="休息处确认" onClick={(event) => event.stopPropagation()}>
+            <p className="eyebrow">二次确认</p>
+            <h3>确认{getActionLabel(pendingAction.action)} {pendingMember.name}？</h3>
+            <div className="rest-confirm-target">
+              <Avatar character={pendingMember} label={pendingMember.name} small />
+              <div>
+                <strong>{pendingMember.name}</strong>
+                <span>{pendingMember.injured ? '重伤' : `${pendingMember.hp}/${pendingMember.maxHp} HP`}</span>
+              </div>
+            </div>
+            <p>{getActionPreview(pendingAction.action, pendingMember)}</p>
+            <p>本次将消耗 {getActionCost(pendingAction.action)} 金币。</p>
+            <div className="action-row">
+              <button className="secondary-button" type="button" onClick={() => setPendingAction(null)}>
+                取消
               </button>
-              <button
-                className="secondary-button"
-                disabled={healUsed || member.injured || member.hp >= member.maxHp || gold < HEAL_OPTIONS.large.cost}
-                onClick={() => onHeal(member.id, 'large')}
-              >
-                大治疗 {HEAL_OPTIONS.large.cost}金币 / {largeHealText}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={reviveUsed || !member.injured || gold < REVIVE_COST}
-                onClick={() => onRevive(member.id)}
-              >
-                复活 {REVIVE_COST}金币
+              <button className="primary-button" type="button" onClick={confirmRestAction}>
+                确认{getActionLabel(pendingAction.action)}
               </button>
             </div>
-          </div>
-        ))}
-      </div>
-      <div className="action-row">
-        <button className="primary-button" onClick={onLeave}>
-          离开休息处
-        </button>
-      </div>
+          </section>
+        </div>
+      )}
+      <button className="primary-button rest-leave-button" onClick={onLeave}>
+        ✦ 离开休息处 ✦
+        <small>进入下一层</small>
+      </button>
     </div>
   );
 }
@@ -1924,6 +2417,7 @@ interface EndScreenProps {
   stats?: BattleStats;
   team: Character[];
   enemies?: Character[];
+  onRetryBattle?: () => void;
   onRestart: () => void;
 }
 
@@ -1947,12 +2441,13 @@ function EnemySurvivorPanel({ enemies }: { enemies: Character[] }) {
               <span>{RARITY_LABELS[enemy.rarity]} · HP {Math.max(0, enemy.hp)}/{enemy.maxHp}</span>
               <div className="enemy-survivor-hp"><span style={{ width: hpPercent(enemy) }} /></div>
               <small>攻击 {enemy.attack} · 速度 {enemy.speed}</small>
-              {(enemy.shield > 0 || enemy.poison > 0 || enemy.vulnerable > 0 || enemy.shieldGainReduced) && (
+              {(enemy.shield > 0 || enemy.poison > 0 || enemy.vulnerable > 0 || enemy.shieldGainReduced || enemy.healingReduced) && (
                 <small>
                   {enemy.shield > 0 ? `护盾 ${enemy.shield} ` : ''}
                   {enemy.poison > 0 ? `毒 ${enemy.poison} ` : ''}
                   {enemy.vulnerable > 0 ? '易损 ' : ''}
                   {enemy.shieldGainReduced ? '护盾削弱 ' : ''}
+                  {enemy.healingReduced ? '回血削弱 ' : ''}
                 </small>
               )}
               {enemy.passive && <small><HighlightText text={`被动：${enemy.passive.description}`} /></small>}
@@ -1965,7 +2460,7 @@ function EnemySurvivorPanel({ enemies }: { enemies: Character[] }) {
   );
 }
 
-function EndScreen({ title, body, log, stats, team, enemies = [], onRestart }: EndScreenProps) {
+function EndScreen({ title, body, log, stats, team, enemies = [], onRetryBattle, onRestart }: EndScreenProps) {
   return (
     <div className="flow-screen">
       <div className="screen-heading">
@@ -1975,7 +2470,7 @@ function EndScreen({ title, body, log, stats, team, enemies = [], onRestart }: E
       </div>
       <EnemySurvivorPanel enemies={enemies} />
       {stats && <DamageMeter stats={stats} team={team} title="伤害统计" />}
-      {log.length > 0 && <BattleLog entries={log} stats={stats} team={team} />}
+      {log.length > 0 && <BattleLog entries={log} stats={stats} team={team} extraAction={onRetryBattle ? { label: '重开本场', onClick: onRetryBattle } : undefined} />}
       <div className="action-row">
         <button className="primary-button" onClick={onRestart}>
           再开一局
@@ -2027,12 +2522,15 @@ function TemplateCard({ template, selected = false, disabled = false, footer, on
           HP {template.maxHp} · 攻 {template.attack} · 速 {template.speed}
         </span>
         {template.passive && (
-          <small>
-            <HighlightText text={`被动「${template.passive.name}」：${template.passive.description}`} />
+          <>
+          <small className="skill-preview-trigger" tabIndex={0}>
+            {`被动「${template.passive.name}」：${getCompactAbilityDescription(template.passive.description)}`}
           </small>
+          <UpgradePreview template={template} />
+          </>
         )}
         <small className="skill-preview-trigger" tabIndex={0}>
-          <HighlightText text={`技能「${template.skill.name}」：${template.skill.description}`} />
+          {`技能「${template.skill.name}」：${getCompactAbilityDescription(template.skill.description)}`}
         </small>
         <UpgradePreview template={template} />
         {template.feature && <small>定位：{template.feature}</small>}
@@ -2061,6 +2559,7 @@ function CharacterCard({ character, selected = false, disabled = false, onClick 
           : GROUP_LABELS[character.group];
   const level = character.upgradeLevel ?? 1;
   const upgradeLines = getUpgradeEffectLines(character.templateId, level);
+  const baseUpgradeLines = getUpgradeEffectLines(character.templateId, 1);
 
   return (
     <button
@@ -2085,16 +2584,21 @@ function CharacterCard({ character, selected = false, disabled = false, onClick 
           HP {character.hp}/{character.maxHp} · 攻 {character.attack} · 速 {character.speed}
           {character.rarity !== 'enemy' && character.rarity !== 'elite' && character.rarity !== 'boss' ? ` LV${level}` : ''}
         </span>
-        {(character.shield > 0 || character.poison > 0 || character.vulnerable > 0 || character.shieldGainReduced) && (
+        {(character.shield > 0 || character.poison > 0 || character.vulnerable > 0 || character.shieldGainReduced || character.healingReduced) && (
           <span>
             {character.shield > 0 ? `护盾 ${character.shield} ` : ''}
             {character.poison > 0 ? `毒 ${character.poison} ` : ''}
             {character.vulnerable > 0 ? '易损 ' : ''}
             {character.shieldGainReduced ? '护盾削弱 ' : ''}
+            {character.healingReduced ? '回血削弱 ' : ''}
           </span>
         )}
         {upgradeLines.length > 0 ? (
-          upgradeLines.map((line) => <small key={line}>{line}</small>)
+          upgradeLines.map((line, index) => (
+            <small key={line}>
+              <HighlightChangedValues text={line} baseText={baseUpgradeLines[index] ?? ''} />
+            </small>
+          ))
         ) : (
           <>
             {character.passive && (
@@ -2150,28 +2654,34 @@ function DamageMeter({ stats, team, title }: { stats: BattleStats; team: Charact
       <h3>{title}</h3>
       <div className="damage-meter-list">
         {orderedStats.map((stat) => (
-          <div className="damage-meter-row" key={stat.characterId}>
-            <strong>{stat.name}</strong>
-            <div className="damage-bar-line damage-dealt-line">
-              <span className="damage-bar-label">造成伤害</span>
-              <span className="damage-bar-track">
-                <span style={{ width: `${stat.damageDealt === 0 ? 0 : Math.max(8, Math.round((stat.damageDealt / maxDamage) * 100))}%` }} />
-              </span>
-              <b>{stat.damageDealt}</b>
-            </div>
-            <div className="damage-bar-line damage-taken-line">
-              <span className="damage-bar-label">承受伤害</span>
-              <span className="damage-bar-track">
-                <span style={{ width: `${stat.damageTaken === 0 ? 0 : Math.max(8, Math.round((stat.damageTaken / maxTaken) * 100))}%` }} />
-              </span>
-              <b>{stat.damageTaken}</b>
-            </div>
-            <div className="damage-bar-line shield-blocked-line">
-              <span className="damage-bar-label">护盾抵挡</span>
-              <span className="damage-bar-track">
-                <span style={{ width: `${stat.shieldBlocked === 0 ? 0 : Math.max(8, Math.round((stat.shieldBlocked / maxShieldBlocked) * 100))}%` }} />
-              </span>
-              <b>{stat.shieldBlocked}</b>
+          <div className={`damage-meter-row ${stats[stat.characterId] ? '' : 'not-deployed'}`.trim()} key={stat.characterId}>
+            {team.find((member) => member.id === stat.characterId) && (
+              <div className="damage-meter-avatar">
+                <Avatar character={team.find((member) => member.id === stat.characterId)!} label={stat.name} small />
+              </div>
+            )}
+            <div className="damage-meter-bars">
+              <div className="damage-bar-line damage-dealt-line">
+                <span className="damage-bar-label">造成伤害</span>
+                <span className="damage-bar-track">
+                  <span style={{ width: `${stat.damageDealt === 0 ? 0 : Math.max(8, Math.round((stat.damageDealt / maxDamage) * 100))}%` }} />
+                </span>
+                <b>{stat.damageDealt}</b>
+              </div>
+              <div className="damage-bar-line damage-taken-line">
+                <span className="damage-bar-label">承受伤害</span>
+                <span className="damage-bar-track">
+                  <span style={{ width: `${stat.damageTaken === 0 ? 0 : Math.max(8, Math.round((stat.damageTaken / maxTaken) * 100))}%` }} />
+                </span>
+                <b>{stat.damageTaken}</b>
+              </div>
+              <div className="damage-bar-line shield-blocked-line">
+                <span className="damage-bar-label">护盾抵挡</span>
+                <span className="damage-bar-track">
+                  <span style={{ width: `${stat.shieldBlocked === 0 ? 0 : Math.max(8, Math.round((stat.shieldBlocked / maxShieldBlocked) * 100))}%` }} />
+                </span>
+                <b>{stat.shieldBlocked}</b>
+              </div>
             </div>
           </div>
         ))}
@@ -2180,7 +2690,7 @@ function DamageMeter({ stats, team, title }: { stats: BattleStats; team: Charact
   );
 }
 
-function BattleResultModal({ phase, stats, team, onClose }: { phase: BattleState['phase']; stats: BattleStats; team: Character[]; onClose: () => void }) {
+function BattleResultModal({ phase, stats, team, primaryLabel = '返回', onClose }: { phase: BattleState['phase']; stats: BattleStats; team: Character[]; primaryLabel?: string; onClose: () => void }) {
   const [showStats, setShowStats] = useState(false);
   const isLost = phase === 'lost';
 
@@ -2199,7 +2709,7 @@ function BattleResultModal({ phase, stats, team, onClose }: { phase: BattleState
             {showStats ? '收起伤害统计' : '查看伤害统计'}
           </button>
           <button className="primary-button" onClick={onClose} type="button">
-            返回
+            {primaryLabel}
           </button>
         </div>
       </section>
@@ -2222,7 +2732,12 @@ function RunStatsModal({ stats, team, onClose }: { stats: BattleStats; team: Cha
         <div className="run-stat-list">
           {orderedStats.map((stat) => (
             <div className="run-stat-card" key={stat.characterId}>
-              <h3>{stat.name}</h3>
+              <div className="run-stat-card-heading">
+                {team.find((member) => member.id === stat.characterId) && (
+                  <Avatar character={team.find((member) => member.id === stat.characterId)!} label={stat.name} small />
+                )}
+                <h3>{stat.name}</h3>
+              </div>
               <p>总伤害：{stat.damageDealt}</p>
               <p>承伤：{stat.damageTaken}</p>
               <p>护盾抵挡：{stat.shieldBlocked}</p>
@@ -2385,19 +2900,38 @@ function BattleLogSummary({ stats, team }: { stats?: BattleStats; team?: Charact
   );
 }
 
-function BattleLog({ entries, stats, team }: { entries: string[]; stats?: BattleStats; team?: Character[] }) {
+function BattleLog({ entries, stats, team, extraAction }: { entries: string[]; stats?: BattleStats; team?: Character[]; extraAction?: { label: string; onClick: () => void } }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [showDamage, setShowDamage] = useState(false);
   const readableEntries = mergeConsecutiveAttacks(buildReadableBattleLog(entries));
   const visibleEntries = showDetails ? readableEntries : readableEntries.filter((entry) => entry.level !== 'detail');
+  const canShowDamage = Boolean(stats && team && team.length > 0);
 
   return (
     <div className="battle-log" aria-live="polite">
       <div className="battle-log-heading">
         <h3>{LOG_WORDS.title}</h3>
-        <button className="ghost-button" type="button" onClick={() => setShowDetails((visible) => !visible)}>
-          {showDetails ? LOG_WORDS.collapse : LOG_WORDS.expand}
-        </button>
+        <div className="battle-log-actions">
+          {extraAction && (
+            <button className="ghost-button battle-log-retry-button" type="button" onClick={extraAction.onClick}>
+              {extraAction.label}
+            </button>
+          )}
+          {canShowDamage && (
+            <button className="ghost-button" type="button" onClick={() => setShowDamage((visible) => !visible)}>
+              {showDamage ? '收起伤害' : '本场伤害'}
+            </button>
+          )}
+          <button className="ghost-button" type="button" onClick={() => setShowDetails((visible) => !visible)}>
+            {showDetails ? LOG_WORDS.collapse : LOG_WORDS.expand}
+          </button>
+        </div>
       </div>
+      {showDamage && stats && team && (
+        <div className="battle-log-damage">
+          <DamageMeter stats={stats} team={team} title="本场伤害" />
+        </div>
+      )}
       <BattleLogSummary stats={stats} team={team} />
       <ol>
         {visibleEntries.map((entry) => (

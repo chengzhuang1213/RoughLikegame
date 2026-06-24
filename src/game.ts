@@ -75,10 +75,57 @@ export function sample<T>(items: T[], count: number): T[] {
   return shuffle(items).slice(0, count);
 }
 
+type RecruitableRarity = Extract<IdolRarity, 'normal' | 'star' | 'legendary'>;
+
+const RECRUITABLE_RARITIES: RecruitableRarity[] = ['normal', 'star', 'legendary'];
+
+const SHOP_RARITY_WEIGHTS: Record<BossTier, Record<RecruitableRarity, number>> = {
+  1: { normal: 70, star: 30, legendary: 0 },
+  2: { normal: 45, star: 45, legendary: 10 },
+  3: { normal: 20, star: 60, legendary: 20 },
+};
+
+function sampleByRarity(
+  rarity: RecruitableRarity,
+  selectedIds: Set<string>,
+  pool: CharacterTemplate[] = CHARACTER_POOL,
+): CharacterTemplate | null {
+  const candidates = pool.filter((character) => character.rarity === rarity && !selectedIds.has(character.id));
+  return sample(candidates, 1)[0] ?? null;
+}
+
+function weightedRandomRarity(
+  weights: Record<RecruitableRarity, number>,
+  selectedIds: Set<string>,
+  pool: CharacterTemplate[],
+): RecruitableRarity | null {
+  const availableWeights = RECRUITABLE_RARITIES
+    .map((rarity) => {
+      const hasAvailable = pool.some((character) => character.rarity === rarity && !selectedIds.has(character.id));
+      return { rarity, weight: hasAvailable ? weights[rarity] : 0 };
+    })
+    .filter(({ weight }) => weight > 0);
+
+  const totalWeight = availableWeights.reduce((total, entry) => total + entry.weight, 0);
+  if (totalWeight <= 0) {
+    return null;
+  }
+
+  let roll = Math.random() * totalWeight;
+  for (const entry of availableWeights) {
+    roll -= entry.weight;
+    if (roll < 0) {
+      return entry.rarity;
+    }
+  }
+
+  return availableWeights[availableWeights.length - 1]?.rarity ?? null;
+}
+
 function fillDraftCandidates(
   required: CharacterTemplate[],
   fillPool: CharacterTemplate[],
-  count = 4,
+  count = 3,
 ): CharacterTemplate[] {
   const selectedIds = new Set(required.map((character) => character.id));
   const fillers = sample(
@@ -91,20 +138,44 @@ function fillDraftCandidates(
 
 export function createDraftCandidates(): CharacterTemplate[] {
   const legendary = CHARACTER_POOL.filter((character) => character.rarity === 'legendary');
-  const star = CHARACTER_POOL.filter((character) => character.rarity === 'star');
   const nonLegendary = CHARACTER_POOL.filter((character) => character.rarity !== 'legendary');
-  const nonLegendaryWithStar = [...star, ...CHARACTER_POOL.filter((character) => character.rarity === 'normal')];
   const roll = Math.random();
 
-  if (roll < 0.7) {
-    return fillDraftCandidates(sample(star, 1), nonLegendaryWithStar);
+  if (roll < 0.01) {
+    return fillDraftCandidates(sample(legendary, 3), nonLegendary);
   }
 
-  if (roll < 0.9) {
+  if (roll < 0.06) {
+    return fillDraftCandidates(sample(legendary, 2), nonLegendary);
+  }
+
+  if (roll < 0.16) {
     return fillDraftCandidates(sample(legendary, 1), nonLegendary);
   }
 
-  return fillDraftCandidates(sample(legendary, 2), CHARACTER_POOL);
+  return fillDraftCandidates([], nonLegendary);
+}
+
+export function createShopOffers(tier: BossTier, ownedIds: Set<string>, count = 3): CharacterTemplate[] {
+  const availableOffers = CHARACTER_POOL.filter((character) => !ownedIds.has(character.id));
+  const weights = SHOP_RARITY_WEIGHTS[tier];
+  const selectedIds = new Set<string>();
+  const offers: CharacterTemplate[] = [];
+
+  while (offers.length < count && selectedIds.size < availableOffers.length) {
+    const rarity = weightedRandomRarity(weights, selectedIds, availableOffers);
+    const offer = rarity ? sampleByRarity(rarity, selectedIds, availableOffers) : null;
+    const fallback = offer ?? sample(availableOffers.filter((character) => !selectedIds.has(character.id)), 1)[0];
+
+    if (!fallback) {
+      break;
+    }
+
+    selectedIds.add(fallback.id);
+    offers.push(fallback);
+  }
+
+  return offers;
 }
 
 function createCharacter(template: CharacterTemplate, id: string, overrides: Partial<Character> = {}): Character {
@@ -136,6 +207,7 @@ function createCharacter(template: CharacterTemplate, id: string, overrides: Par
     battleAttackBonus: 0,
     battleSpeedBonus: 0,
     shieldGainReduced: false,
+    healingReduced: false,
     battleMaxHpBonus: 0,
     bossTier: template.bossTier,
     eliteTier: template.eliteTier,
@@ -143,6 +215,7 @@ function createCharacter(template: CharacterTemplate, id: string, overrides: Par
     feature: template.feature,
     mechanic: template.mechanic,
     upgradeLevel: 1,
+    dreamerNodeCount: 0,
     ...overrides,
   };
 }
@@ -252,6 +325,13 @@ export function applyPostNodePassives(teamInput: Character[]): Character[] {
   let team = teamInput;
 
   if (hasSecondaryBond(team, 'dreamer')) {
+    const nextDreamerNodeCount = Math.max(
+      0,
+      ...team
+        .filter((member) => member.templateId === 'keke' || member.templateId === 'kanata')
+        .map((member) => member.dreamerNodeCount ?? 0),
+    ) + 1;
+    const shouldTriggerDreamer = nextDreamerNodeCount % 2 === 0;
     team = team.map((member) => {
       if (member.templateId !== 'keke' && member.templateId !== 'kanata') {
         return member;
@@ -259,10 +339,10 @@ export function applyPostNodePassives(teamInput: Character[]): Character[] {
 
       return {
         ...member,
-        attack: member.attack + 1,
-        speed: member.speed + 1,
-        maxHp: member.maxHp + 5,
-        hp: member.injured ? member.hp : member.hp + 5,
+        dreamerNodeCount: nextDreamerNodeCount,
+        attack: member.attack + (shouldTriggerDreamer ? 1 : 0),
+        maxHp: member.maxHp + (shouldTriggerDreamer ? 5 : 0),
+        hp: member.injured ? member.hp : member.hp + (shouldTriggerDreamer ? 5 : 0),
       };
     });
   }

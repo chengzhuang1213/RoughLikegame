@@ -18,12 +18,13 @@ export type SecondaryBondId =
 
 export type PassiveId =
   | 'ayumu_low_hp'
+  | 'rina_board'
   | 'nico_skill_growth'
   | 'kotori_shield_breaker'
   | 'keke_inspiration'
+  | 'you_full_speed'
   | 'eli_training'
   | 'mari_shiny'
-  | 'yoshiko_power'
   | 'kanata_nap'
   | 'ren_extra_hp'
   | 'nozomi_turn_shield'
@@ -56,15 +57,13 @@ export type PassiveId =
 
 export type SkillId =
   | 'ayumu_musou'
-  | 'rina_double'
   | 'nico_triple'
   | 'kotori_crit'
   | 'keke_charge'
-  | 'you_vulnerable'
   | 'eli_discipline'
   | 'mari_shield'
-  | 'yoshiko_poison'
   | 'nozomi_fortune'
+  | 'nozomi_tarot'
   | 'kanata_execute'
   | 'enemy_basic'
   | 'boss_honoka_rush'
@@ -128,6 +127,7 @@ export interface Character {
   battleAttackBonus: number;
   battleSpeedBonus: number;
   shieldGainReduced: boolean;
+  healingReduced: boolean;
   bossTier?: BossTier;
   eliteTier?: EliteTier;
   enemyTier?: EnemyPoolId;
@@ -135,6 +135,7 @@ export interface Character {
   mechanic?: string;
   upgradeLevel: UpgradeLevel;
   battleMaxHpBonus: number;
+  dreamerNodeCount?: number;
 }
 
 export type NodeType = 'battle' | 'elite' | 'shop' | 'rest' | 'boss';
@@ -155,6 +156,7 @@ export interface RuntimeFlags {
   greyFirstDamageBoostUsed?: boolean;
   firstLeaderDoubleUsed?: boolean;
   firstCritBoostUsed?: boolean;
+  campusLeaderGuardUsed?: boolean;
   kekeCharged?: boolean;
   kekeChargeCooldown?: number;
   skillCooldown?: number;
@@ -171,6 +173,7 @@ export interface RuntimeFlags {
   kasumiStageStacks?: number;
   nextAttackMultiplier?: number;
   bossFatalGuardUsed?: boolean;
+  fatalGuardShieldPending?: number;
   ayumuHealBonus?: number;
   transformed?: boolean;
   skillUsedOnce?: boolean;
@@ -178,6 +181,15 @@ export interface RuntimeFlags {
   spiritOpeningGranted?: boolean;
   mariSkillActive?: boolean;
   dreamStacks?: number;
+  openingRound?: boolean;
+  nicoComboActive?: boolean;
+  littleDevilOnField?: boolean;
+  nozoeliOnField?: boolean;
+  tarotMagicianUsedThisTurn?: boolean;
+  tarotMagicianTriggeredLastSkill?: boolean;
+  campusLeaderOnField?: boolean;
+  energeticIdolOnField?: boolean;
+  mysteryOnFieldLevel?: 0 | 1 | 2 | 3;
 }
 
 export type RuntimeState = Record<string, RuntimeFlags>;

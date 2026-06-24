@@ -1,4 +1,4 @@
-﻿# LoveLive Roguelike Beta
+﻿# DreamStage
 
 React + TypeScript single-player frontend prototype for testing a character-build roguelike loop.
 
@@ -13,7 +13,7 @@ Implemented Beta loop:
 - recruit partners in shops
 - always visit a rest node before the boss
 - heal once at each rest node, choosing either a small heal or a large heal
-- revive once at each rest node, restoring 60% max HP
+- revive once at each rest node, restoring 30% max HP
 - trigger character passives, automatic skills, and 2/3-member bonds
 
 Beta bond groups:
@@ -42,4 +42,5 @@ pnpm dev
 ```
 
 In this Codex desktop environment, use the bundled Node runtime if `node` is not on PATH.
+
 

@@ -1,4 +1,4 @@
-# LoveLive Roguelike 设计记录
+﻿# DreamStage 设计记录
 
 ## 当前架构入口
 
@@ -59,3 +59,4 @@
 - 把 `BondPanel`、角色卡、战斗日志、统计弹窗继续拆到 `src/components/`。
 - 把 `styles.css` 按页面和组件拆成 `src/styles/` 下的多个文件，再由一个入口统一导入。
 - 把角色升级文案从 `App.tsx` 继续迁移到数据或独立说明文件。
+

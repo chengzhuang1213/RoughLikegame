@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOND_GROUPS,
   CHARACTER_POOL,
@@ -162,10 +162,12 @@ function MapNodeButton({
   node,
   onEnter,
   onPreview,
+  scrollRef,
 }: {
   node: MapNode;
   onEnter: (node: MapNode) => void;
   onPreview: (node: MapNode) => void;
+  scrollRef?: (element: HTMLButtonElement | null) => void;
 }) {
   const position = getNodePosition(node);
   const canPreview = node.available && !node.completed;
@@ -177,6 +179,7 @@ function MapNodeButton({
       onFocus={() => canPreview && onPreview(node)}
       onClick={() => onEnter(node)}
       onPointerEnter={() => canPreview && onPreview(node)}
+      ref={scrollRef}
       style={{ '--node-x': `${position.x}%`, '--node-y': `${position.y}%` } as CSSProperties}
       type="button"
     >
@@ -197,11 +200,18 @@ function TeamDock({ team, onOpenDetails }: { team: Character[]; onOpenDetails: (
       <div className="team-dock-grid">
         {slots.map((member, index) =>
           member ? (
-            <div className={`team-dock-member rarity-${member.rarity}`} key={member.id}>
+            <div className={`team-dock-member rarity-${member.rarity} ${member.injured ? 'injured' : ''}`} key={member.id} tabIndex={0}>
               <Avatar character={member} label={member.name} />
               <span>
-                {member.hp}/{member.maxHp}
+                {member.injured ? '重伤' : `${member.hp}/${member.maxHp}`}
               </span>
+              <div className="dock-popover team-dock-popover">
+                <strong>{member.name}</strong>
+                <small>{GROUP_LABELS[member.group]} · LV{member.upgradeLevel ?? 1}</small>
+                <small>HP {member.hp}/{member.maxHp} · 攻 {member.attack} · 速 {member.speed}</small>
+                {member.passive && <span>被动：{member.passive.description}</span>}
+                {member.skill && <span>技能：{member.skill.description}</span>}
+              </div>
             </div>
           ) : (
             <div className="team-empty-slot" key={`empty-${index}`}>
@@ -219,7 +229,7 @@ function BondProgressDock({ team, onOpenDetails }: { team: Character[]; onOpenDe
   const primaryBonds = getActiveBonds(team).filter((bond) => bond.count > 0);
   const secondaryBonds = getActiveSecondaryBonds(team).filter((bond) => bond.count > 0);
   const visibleBonds = [
-    ...primaryBonds.slice(0, 4).map((bond) => ({
+    ...primaryBonds.map((bond) => ({
       id: bond.group.id,
       name: bond.group.name,
       count: bond.count,
@@ -227,8 +237,12 @@ function BondProgressDock({ team, onOpenDetails }: { team: Character[]; onOpenDe
       active: bond.level > 0,
       secondary: false,
       logoSrc: BOND_LOGO_SRC[bond.group.id],
+      details: [
+        `2人：${bond.group.level2Description}`,
+        `3人：${bond.group.level3Description}`,
+      ],
     })),
-    ...secondaryBonds.slice(0, 2).map((bond) => ({
+    ...secondaryBonds.map((bond) => ({
       id: bond.bond.id,
       name: bond.bond.name,
       count: bond.count,
@@ -236,8 +250,9 @@ function BondProgressDock({ team, onOpenDetails }: { team: Character[]; onOpenDe
       active: bond.active,
       secondary: true,
       logoSrc: BOND_LOGO_SRC[bond.bond.id],
+      details: [bond.bond.description],
     })),
-  ];
+  ].sort((left, right) => Number(right.active) - Number(left.active) || right.count - left.count || right.total - left.total).slice(0, 6);
 
   return (
     <section className="hud-card bond-progress-dock">
@@ -247,9 +262,13 @@ function BondProgressDock({ team, onOpenDetails }: { team: Character[]; onOpenDe
       </div>
       <div className="bond-progress-list">
         {visibleBonds.map((bond) => (
-          <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''}`} key={bond.id}>
+          <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'}`} key={bond.id} tabIndex={0}>
             <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
             <em>{bond.count}/{bond.total}</em>
+            <div className="dock-popover bond-dock-popover">
+              <strong>{bond.name} {bond.count}/{bond.total}</strong>
+              {bond.details.map((detail) => <span key={detail}>{detail}</span>)}
+            </div>
           </div>
         ))}
       </div>
@@ -468,12 +487,27 @@ export function MapScreen({ nodes, boss, team, stats: _stats, gold, musicMuted: 
   const [activeModal, setActiveModal] = useState<MapModal>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const currentNodeRef = useRef<HTMLButtonElement | null>(null);
   const hoveredNode = hoveredNodeId ? nodes.find((node) => node.id === hoveredNodeId && node.available && !node.completed) ?? null : null;
   const lastCompletedNode = [...nodes]
     .filter((node) => node.completed)
     .sort((left, right) => right.row - left.row || right.col - left.col)[0] ?? null;
   const defaultAvailableNode = nodes.find((node) => node.available && !node.completed) ?? null;
   const cursorNode = hoveredNode ?? lastCompletedNode ?? defaultAvailableNode;
+  const scrollTargetNode = defaultAvailableNode ?? lastCompletedNode;
+
+  useEffect(() => {
+    const element = currentNodeRef.current;
+    if (!element || !scrollTargetNode) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const lowerViewportLine = window.innerHeight * 0.72;
+    if (rect.top > lowerViewportLine || rect.bottom > window.innerHeight - 72) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+  }, [scrollTargetNode?.id]);
 
   return (
     <div className="map-hud-screen">
@@ -499,6 +533,7 @@ export function MapScreen({ nodes, boss, team, stats: _stats, gold, musicMuted: 
               node={node}
               onEnter={onEnter}
               onPreview={(previewNode) => setHoveredNodeId(previewNode.id)}
+              scrollRef={node.id === scrollTargetNode?.id ? (element) => { currentNodeRef.current = element; } : undefined}
             />
           ))}
         </div>

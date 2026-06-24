@@ -1,4 +1,4 @@
-import type { BattlePhase, BattleState, BattleStats, Character, CharacterBattleStats, RuntimeFlags, RuntimeState, BattleType, UpgradeLevel } from './types';
+﻿import type { BattlePhase, BattleState, BattleStats, Character, CharacterBattleStats, RuntimeFlags, RuntimeState, BattleType, UpgradeLevel } from './types';
 import { hasBond, hasSecondaryBond } from './bonds';
 import { ROLE_DAMAGE_MULTIPLIERS, ROLE_LABELS } from './data/labels';
 
@@ -34,6 +34,7 @@ function clearBattleOnlyState(character: Character): Character {
     battleAttackBonus: 0,
     battleSpeedBonus: 0,
     shieldGainReduced: false,
+    healingReduced: false,
     battleMaxHpBonus: 0,
   };
 }
@@ -77,7 +78,8 @@ function effectiveSpeed(character: Character): number {
 
 function heal(character: Character, amount: number): number {
   const before = character.hp;
-  character.hp = Math.min(character.maxHp, character.hp + amount);
+  const finalAmount = character.healingReduced ? Math.ceil(amount * 0.5) : amount;
+  character.hp = Math.min(character.maxHp, character.hp + finalAmount);
   return character.hp - before;
 }
 
@@ -119,10 +121,22 @@ function applyShieldReduction(target: Character, log: string[]) {
   }, log);
 }
 
-function applyPoison(target: Character, layers: number, log: string[]) {
+function applyHealingReduction(target: Character, log: string[]) {
+  if (target.healingReduced) {
+    return;
+  }
+
+  applyStatus(target, '回血削弱', () => {
+    target.healingReduced = true;
+    log.push(`${target.name}受到回血削弱，后续回血效果减半。`);
+  }, log);
+}
+
+function applyPoison(target: Character, layers: number, log: string[], maxLayers?: number) {
   applyStatus(target, '毒', () => {
-    target.poison += layers;
-    log.push(`${target.name}获得${layers}层毒。`);
+    const before = target.poison;
+    target.poison = maxLayers === undefined ? target.poison + layers : Math.min(maxLayers, target.poison + layers);
+    log.push(`${target.name}获得${target.poison - before}层毒${maxLayers === undefined ? '' : `（${target.poison}/${maxLayers}）`}。`);
   }, log);
 }
 
@@ -167,33 +181,33 @@ function prepareCombatant(
     }
   }
 
+  if (isAlly && actor.passive?.id === 'rina_board' && upgradeLevel(actor) >= 2) {
+    addShield(actor, 10, log, '触发Lv2璃奈板');
+  }
+
+  if (isAlly && actor.passive?.id === 'kotori_shield_breaker') {
+    applyShieldReduction(_opponent, log);
+  }
+
+  if (isAlly && actor.passive?.id === 'eli_training') {
+    applyHealingReduction(_opponent, log);
+  }
+
   if (isAlly && hasSecondaryBond(team, 'full_speed')) {
     actor.battleSpeedBonus += 5;
     log.push(`${actor.name}触发「全速模式」，速度+5。`);
   }
 
   if (isAlly && hasBond(team, 'cute', 2)) {
-    actor.battleAttackBonus += 2;
-    log.push(`${actor.name}触发「萌力扩散」，攻击+2。`);
+    const attackBonus = hasBond(team, 'cute', 3) ? 3 : 1;
+    actor.battleAttackBonus += attackBonus;
+    log.push(`${actor.name}触发「萌力扩散」，攻击+${attackBonus}。`);
   }
 
   if (isAlly && actor.group === 'president' && hasBond(team, 'president', 3)) {
     addShield(actor, Math.ceil(actor.maxHp * 0.2), log, '触发「领袖风范」');
   }
 
-  if (isAlly && hasSecondaryBond(team, 'nozoeli')) {
-    addShield(actor, Math.ceil(actor.maxHp * 0.15), log, '触发「绘希」');
-  }
-
-  if (isAlly) {
-    const mysteryHpBonus = hasBond(team, 'mystery', 3) ? 20 : hasBond(team, 'mystery', 2) ? 10 : 0;
-    if (mysteryHpBonus > 0 && actor.battleMaxHpBonus === 0) {
-      actor.maxHp += mysteryHpBonus;
-      actor.hp += mysteryHpBonus;
-      actor.battleMaxHpBonus = mysteryHpBonus;
-      log.push(`${actor.name}触发「命运之子」，生命值上限+${mysteryHpBonus}。`);
-    }
-  }
 }
 
 function tryBossEncore(character: Character, runtime: RuntimeState, log: string[]): boolean {
@@ -246,7 +260,7 @@ function tryExecute(
     return false;
   }
 
-  const threshold = upgradeLevel(attacker) >= 5 ? 0.3 : 0.2;
+  const threshold = upgradeLevel(attacker) >= 5 ? 0.25 : 0.2;
   if (defender.hp / defender.maxHp <= threshold) {
     const remainingHp = defender.hp;
     defender.hp = 0;
@@ -307,7 +321,7 @@ function addFightingSpirit(character: Character, runtime: RuntimeState, log: str
   }
 
   const flags = getFlags(runtime, character.id);
-  const limit = upgradeLevel(character) >= 5 ? 7 : 5;
+  const limit = upgradeLevel(character) >= 5 ? 4 : 3;
   const before = flags.fightingSpirit ?? 0;
   flags.fightingSpirit = Math.min(limit, before + amount);
   if (flags.fightingSpirit > before) {
@@ -323,6 +337,25 @@ function getDreamDamageBonus(attacker: Character, defender: Character, runtime: 
   const dreamStacks = Math.min(2, getFlags(runtime, defender.id).dreamStacks ?? 0);
   const perStack = upgradeLevel(attacker) >= 4 ? 0.08 : upgradeLevel(attacker) >= 2 ? 0.05 : 0.03;
   return dreamStacks * perStack;
+}
+
+function battleFlags(runtime: RuntimeState): RuntimeFlags {
+  return getFlags(runtime, '__battle');
+}
+
+function hasMembersOnField(allies: Character[], memberIds: string[]): boolean {
+  const activeIds = new Set(allies.filter((ally) => ally.hp > 0 && !ally.injured).map((ally) => ally.templateId));
+  return memberIds.every((id) => activeIds.has(id));
+}
+
+function setActiveSecondaryBondFlags(allies: Character[], runtime: RuntimeState) {
+  const flags = battleFlags(runtime);
+  flags.littleDevilOnField = hasMembersOnField(allies, ['nico', 'yoshiko']);
+  flags.nozoeliOnField = hasMembersOnField(allies, ['eli', 'nozomi']);
+  flags.campusLeaderOnField = hasMembersOnField(allies, ['ren', 'ayumu']);
+  flags.energeticIdolOnField = hasMembersOnField(allies, ['you', 'nico']);
+  const mysteryCount = allies.filter((ally) => ally.hp > 0 && !ally.injured && ally.group === 'mystery').length;
+  flags.mysteryOnFieldLevel = mysteryCount >= 3 ? 3 : mysteryCount >= 2 ? 2 : mysteryCount === 1 ? 1 : 0;
 }
 
 function calculateDamage(
@@ -344,24 +377,23 @@ function calculateDamage(
   const kasumiSkillActive =
     attacker.skill.id === 'boss_kasumi_cutest' && (flags.skillCooldown ?? 0) <= 0;
 
-  if (attacker.passive?.id === 'ayumu_low_hp' && attacker.hp / attacker.maxHp < 0.5) {
-    damage *= 1.2;
-    log.push(`${attacker.name}发动「${attacker.passive.name}」，本次攻击力+20%。`);
-  }
-
   if (attacker.passive?.id === 'mari_shiny' && attacker.shield > 0 && flags.mariSkillActive) {
     const flags = getFlags(runtime, attacker.id);
     const spirit = flags.fightingSpirit ?? 0;
-    const skillBonus = upgradeLevel(attacker) >= 4 ? spirit * 0.03 : 0;
-    const multiplier = 1.5 + skillBonus;
+    const multiplier = 1.5;
     damage *= multiplier;
     criticalChance = 1;
-    log.push(`${attacker.name}发动《${attacker.skill.name}》，拥有护盾时必定暴击，技能伤害提高${Math.round((multiplier - 1) * 100)}%。`);
-  }
-
-  if (attacker.passive?.id === 'yoshiko_power' && defender.poison > 0 && upgradeLevel(attacker) >= 3) {
-    damage += 3;
-    log.push(`${attacker.name}发动《${attacker.passive.name}》，目标中毒时额外+3伤害。`);
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，拥有护盾时必定暴击，造成1.5倍伤害。`);
+    if (upgradeLevel(attacker) >= 5 && spirit >= 4) {
+      const teammateAttackSum = team
+        .filter((member) => member.id !== attacker.id && !member.injured && member.hp > 0)
+        .reduce((sum, member) => sum + effectiveAttack(member), 0);
+      const teamAttackBonus = Math.round(teammateAttackSum * 0.65);
+      if (teamAttackBonus > 0) {
+        damage += teamAttackBonus;
+        log.push(`${attacker.name}处于4级战意，技能追加队友攻击力总和65%的伤害（+${teamAttackBonus}）。`);
+      }
+    }
   }
 
   if (attacker.passive?.id === 'elite_umi_low_hp' && attacker.hp / attacker.maxHp < 0.6) {
@@ -439,13 +471,12 @@ function calculateDamage(
   }
 
   if (isAllyAttacker && hasBond(team, 'cute', 3)) {
-    criticalChance += 0.15;
+    criticalChance += 0.05;
   }
 
-  if (isAllyAttacker && hasSecondaryBond(team, 'energetic_idol') && !flags.firstCritBoostUsed) {
-    flags.firstCritBoostUsed = true;
-    criticalChance += 0.5;
-    log.push(`${attacker.name}触发「元气偶像」，首回合暴击率+50%。`);
+  if (isAllyAttacker && battleFlags(runtime).energeticIdolOnField && flags.openingRound) {
+    damage += 3;
+    log.push(`${attacker.name}触发「元气偶像」，首回合攻击+3。`);
   }
 
   if (attacker.passive?.id === 'elite_natsumi_traffic') {
@@ -461,12 +492,6 @@ function calculateDamage(
 
   if (bossPowerSkillActive || kasumiSkillActive) {
     flags.skillCooldown = 1;
-  }
-
-  if (isAllyAttacker && hasSecondaryBond(team, 'campus_leader') && !flags.firstLeaderDoubleUsed) {
-    flags.firstLeaderDoubleUsed = true;
-    damage *= 1.5;
-    log.push(`${attacker.name}触发「校园领袖」，首次攻击造成1.5倍伤害。`);
   }
 
   if (
@@ -530,14 +555,11 @@ function resolveAttack(
     return;
   }
 
-  const flags = getFlags(runtime, attacker.id);
-
-  if (attacker.passive?.id === 'kotori_shield_breaker') {
+  if (attacker.passive?.id === 'kotori_shield_breaker' && upgradeLevel(attacker) >= 3) {
     if (defender.shield > 0) {
       log.push(`${attacker.name}发动「${attacker.passive.name}」，击碎${defender.name}的${defender.shield}点护盾。`);
       defender.shield = 0;
     }
-    applyShieldReduction(defender, log);
   }
 
   let { damage, critical } = calculateDamage(
@@ -566,17 +588,22 @@ function resolveAttack(
   if (
     damage > 0 &&
     isAllyDefender &&
-    defender.templateId === 'kanata' &&
-    upgradeLevel(defender) >= 2 &&
-    attacker.bossTier &&
+    defender.group === 'mystery' &&
+    (battleFlags(runtime).mysteryOnFieldLevel ?? 0) >= 2 &&
     !defenderFlags.bossFatalGuardUsed
   ) {
     const hpDamage = Math.max(0, damage - defender.shield);
     if (hpDamage >= defender.hp) {
       defenderFlags.bossFatalGuardUsed = true;
-      defenderFlags.nextAttackMultiplier = 3;
+      if (defender.templateId === 'kanata' && upgradeLevel(defender) >= 2 && attacker.bossTier) {
+        defenderFlags.nextAttackMultiplier = 3;
+      }
+      const mysteryLevel = battleFlags(runtime).mysteryOnFieldLevel ?? 0;
+      if (mysteryLevel >= 3) {
+        defenderFlags.fatalGuardShieldPending = 35;
+      }
       damage = Math.max(0, defender.shield + defender.hp - 1);
-      log.push(`${defender.name}触发Lv2强化，Boss战首次致命伤保留1HP，下次攻击造成3倍伤害。`);
+      log.push(`${defender.name}触发「命运之子」，首次致命伤保留1HP${mysteryLevel >= 3 ? '并准备获得35护盾' : ''}。`);
     }
   }
 
@@ -585,15 +612,26 @@ function resolveAttack(
   applyDamageToShieldAndHp(defender, damage);
   const actualDamage = Math.min(damage, defenderDurabilityBefore);
   log.push(`${attacker.name}攻击${defender.name}，造成${damage}伤害，${defender.name}剩余${defender.hp}HP。`);
+  if (defenderFlags.fatalGuardShieldPending && defender.hp > 0) {
+    const shieldAmount = defenderFlags.fatalGuardShieldPending;
+    defenderFlags.fatalGuardShieldPending = undefined;
+    addShield(defender, shieldAmount, log, '触发「命运之子」');
+  }
 
   const kotoriTrueDamage =
-    actualDamage > 0 && attacker.skill.id === 'kotori_crit' && upgradeLevel(attacker) >= 3 && defender.hp > 0
+    actualDamage > 0 && attacker.skill.id === 'kotori_crit' && upgradeLevel(attacker) >= 4 && defender.hp > 0
       ? Math.min(10, defender.hp)
       : 0;
   if (kotoriTrueDamage > 0) {
     defender.hp = Math.max(0, defender.hp - kotoriTrueDamage);
-    log.push(`${attacker.name}触发Lv3强化，技能伤害结算后额外造成${kotoriTrueDamage}点真实伤害，${defender.name}剩余${defender.hp}HP。`);
+    log.push(`${attacker.name}触发Lv4强化，攻击额外造成${kotoriTrueDamage}点真实伤害，${defender.name}剩余${defender.hp}HP。`);
     tryBossEncore(defender, runtime, log);
+  }
+
+  if (damage > 0 && isAllyDefender && battleFlags(runtime).campusLeaderOnField && !defenderFlags.campusLeaderGuardUsed) {
+    defenderFlags.campusLeaderGuardUsed = true;
+    damage = Math.max(0, damage - 3);
+    log.push(`${defender.name}触发「校园领袖」，首次受到的伤害-3点。`);
   }
   let kanataDreamDamage = 0;
   if (actualDamage > 0 && attacker.skill.id === 'kanata_execute' && defender.hp > 0) {
@@ -617,11 +655,6 @@ function resolveAttack(
     const defenderStats = getBattleStat(stats, defender);
     defenderStats.damageTaken += actualDamage - shieldBlocked + kotoriTrueDamage;
     defenderStats.shieldBlocked += shieldBlocked;
-  }
-
-  if (actualDamage > 0 && attacker.skill.id === 'yoshiko_poison' && defender.hp > 0) {
-    log.push(`${attacker.name}触发Lv1强化，攻击附加1层毒。`);
-    applyPoison(defender, 1, log);
   }
 
   if (attacker.passive?.id === 'keke_inspiration') {
@@ -659,38 +692,95 @@ function resolveAttack(
     log.push(`${defender.name}发动「${defender.passive.name}」，生命首次低于20%，恢复${restored}HP。`);
   }
 
-  if (defender.hp > 0 && defender.passive?.id === 'eli_training') {
-    defender.battleAttackBonus += 1;
-    log.push(`${defender.name}发动「${defender.passive.name}」，本场攻击力+1。`);
-  }
-
   if (defender.hp > 0 && defender.passive?.id === 'elite_emma_warm_power') {
     defender.battleAttackBonus += 2;
     log.push(`${defender.name}发动「${defender.passive.name}」，本场攻击力+2。`);
   }
 
-  if (critical && actualDamage > 0 && isAllyAttacker && hasSecondaryBond(team, 'little_devil') && defender.hp > 0) {
-    log.push(`${attacker.name}触发「小恶魔」，暴击附加5层毒。`);
-    applyPoison(defender, 5, log);
-  }
-
-  if (attacker.skill.id === 'you_vulnerable' && !flags.firstAttackUsed && defender.hp > 0) {
-    flags.firstAttackUsed = true;
-    log.push(`${attacker.name}发动「${attacker.skill.name}」。`);
-    applyVulnerable(defender, log, upgradeLevel(attacker) >= 2 ? 2.5 : 2);
-  }
-
-  if (
-    attacker.skill.id === 'yoshiko_poison' &&
-    (flags.skillCooldown ?? 0) <= 0 &&
-    defender.hp > 0
-  ) {
-    log.push(`${attacker.name}发动「${attacker.skill.name}」。`);
-    applyPoison(defender, upgradeLevel(attacker) >= 2 ? 4 : 3, log);
-    flags.skillCooldown = 1;
+  if (attacker.passive?.id === 'you_full_speed' && actualDamage > 0 && defender.hp > 0) {
+    const multiplier = upgradeLevel(attacker) >= 3 ? 2.5 : upgradeLevel(attacker) >= 2 ? 2 : 1.5;
+    log.push(`${attacker.name}发动「${attacker.passive.name}」。`);
+    applyVulnerable(defender, log, multiplier);
   }
 
   tryExecute(attacker, defender, isAllyAttacker, team, runtime, log, stats);
+}
+
+function applyLittleDevilTurnStart(attacker: Character, runtime: RuntimeState, log: string[]) {
+  if (!battleFlags(runtime).littleDevilOnField || (attacker.templateId !== 'nico' && attacker.templateId !== 'yoshiko')) {
+    return;
+  }
+
+  if (attacker.hp / attacker.maxHp > 0.5) {
+    attacker.battleAttackBonus += 1;
+    log.push(`${attacker.name}触发「小恶魔」，生命高于50%，本场攻击力+1。`);
+    return;
+  }
+
+  addShield(attacker, 2, log, '触发「小恶魔」');
+}
+
+function applyNozoeliTurnStart(attacker: Character, runtime: RuntimeState, log: string[]) {
+  if (!battleFlags(runtime).nozoeliOnField || (attacker.templateId !== 'eli' && attacker.templateId !== 'nozomi')) {
+    return;
+  }
+
+  if (Math.random() < 0.5) {
+    attacker.battleAttackBonus += 2;
+    log.push(`${attacker.name}触发「绘希」，随机获得本场攻击力+2。`);
+    return;
+  }
+
+  attacker.battleSpeedBonus += 2;
+  log.push(`${attacker.name}触发「绘希」，随机获得本场速度+2。`);
+}
+
+function drawNozomiTarotCard(flags: RuntimeFlags): 'hanged' | 'wheel' | 'magician' {
+  const cards: Array<'hanged' | 'wheel' | 'magician'> = flags.tarotMagicianUsedThisTurn
+    ? ['hanged', 'wheel']
+    : ['hanged', 'wheel', 'magician'];
+  return cards[Math.floor(Math.random() * cards.length)];
+}
+
+function castNozomiTarot(
+  attacker: Character,
+  defender: Character,
+  isAllyAttacker: boolean,
+  team: Character[],
+  runtime: RuntimeState,
+  log: string[],
+  stats: BattleStats,
+) {
+  const flags = getFlags(runtime, attacker.id);
+  const card = drawNozomiTarotCard(flags);
+
+  if (card === 'hanged') {
+    const multiplier = upgradeLevel(attacker) >= 2 ? 2.5 : 1.75;
+    flags.nextAttackMultiplier = multiplier;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，抽到「倒吊人」，本次技能伤害×${multiplier}。`);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
+    return;
+  }
+
+  if (card === 'wheel') {
+    const multiplier = upgradeLevel(attacker) >= 3 ? 1.25 : 1.1;
+    const shieldAmount = upgradeLevel(attacker) >= 3 ? 12 : 8;
+    flags.nextAttackMultiplier = multiplier;
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，抽到「命运之轮」，造成${multiplier}倍伤害并获得${shieldAmount}护盾。`);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
+    if (attacker.hp > 0) {
+      addShield(attacker, shieldAmount, log, '抽到「命运之轮」');
+    }
+    return;
+  }
+
+  flags.tarotMagicianUsedThisTurn = true;
+  flags.tarotMagicianTriggeredLastSkill = true;
+  log.push(`${attacker.name}发动《${attacker.skill.name}》，抽到「魔术师」，本次造成1倍伤害并立即再次抽牌。`);
+  resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
+  if (defender.hp > 0 && attacker.hp > 0) {
+    castNozomiTarot(attacker, defender, isAllyAttacker, team, runtime, log, stats);
+  }
 }
 
 function takeTurn(
@@ -707,11 +797,16 @@ function takeTurn(
   }
 
   const flags = getFlags(runtime, attacker.id);
+  flags.tarotMagicianUsedThisTurn = false;
+  flags.tarotMagicianTriggeredLastSkill = false;
   const chargeCooldown = flags.kekeChargeCooldown ?? 0;
   const skillCooldown = flags.skillCooldown ?? 0;
 
+  applyLittleDevilTurnStart(attacker, runtime, log);
+  applyNozoeliTurnStart(attacker, runtime, log);
+
   if (attacker.passive?.id === 'nozomi_turn_shield') {
-    addShield(attacker, 3, log, `发动「${attacker.passive.name}」`);
+    addShield(attacker, upgradeLevel(attacker) >= 3 ? 5 : 3, log, `发动「${attacker.passive.name}」`);
   }
 
   if (attacker.passive?.id === 'mari_shiny') {
@@ -722,9 +817,9 @@ function takeTurn(
     }
     const spirit = spiritFlags.fightingSpirit ?? 0;
     if (spirit > 0) {
-      const shieldPerStack = upgradeLevel(attacker) >= 3 ? 1 : 0.5;
+      const shieldPerStack = upgradeLevel(attacker) >= 3 ? 2 : 0.5;
       const shieldAmount = Math.floor(spirit * shieldPerStack);
-      const attackBonus = Math.floor(spirit * 0.5);
+      const attackBonus = Math.floor(spirit * (upgradeLevel(attacker) >= 3 ? 1 : 0.5));
       if (shieldAmount > 0) {
         addShield(attacker, shieldAmount, log, `发动「${attacker.passive.name}」`);
       }
@@ -765,21 +860,22 @@ function takeTurn(
   }
 
   if (attacker.skill.id === 'ayumu_musou' && skillCooldown <= 0) {
-    const baseHeal = upgradeLevel(attacker) === 1 ? 5 : upgradeLevel(attacker) === 2 ? 10 : 15;
+    const baseHeal = upgradeLevel(attacker) >= 3 ? 15 : 10;
     const bonus = flags.ayumuHealBonus ?? 0;
     const amount = baseHeal + bonus;
-    let totalRestored = 0;
-    team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
-      totalRestored += heal(member, amount);
-      if (upgradeLevel(attacker) >= 3 && member.poison > 0) {
-        member.poison = 0;
-      }
+    const targets = upgradeLevel(attacker) >= 2
+      ? team.filter((member) => !member.injured && member.hp > 0)
+      : [team
+          .filter((member) => !member.injured && member.hp > 0)
+          .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0] ?? attacker];
+    targets.forEach((member) => {
+      heal(member, amount);
     });
-    if (totalRestored > 0) {
-      flags.ayumuHealBonus = bonus + 3;
+    flags.ayumuHealBonus = bonus + 3;
+    if (upgradeLevel(attacker) < 4) {
+      flags.skillCooldown = 1;
     }
-    flags.skillCooldown = 1;
-    log.push(`${attacker.name}发动《${attacker.skill.name}》，全体友方恢复${amount}HP${upgradeLevel(attacker) >= 3 ? '并解除所有毒层' : ''}。`);
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，${upgradeLevel(attacker) >= 2 ? '全体友方' : targets[0].name}恢复${amount}HP，后续治疗量+3。`);
     return;
   }
 
@@ -826,32 +922,38 @@ function takeTurn(
     }
   }
 
+  if (attacker.skill.id === 'nozomi_tarot' && skillCooldown <= 0 && defender.hp > 0) {
+    castNozomiTarot(attacker, defender, isAllyAttacker, team, runtime, log, stats);
+    flags.skillCooldown = upgradeLevel(attacker) >= 4 && flags.tarotMagicianTriggeredLastSkill ? 0 : 1;
+    return;
+  }
+
   if (attacker.skill.id === 'eli_discipline' && skillCooldown <= 0) {
-    const attackBonus = upgradeLevel(attacker) === 1 ? 2 : upgradeLevel(attacker) === 2 ? 3 : 4;
+    const attackBonus = upgradeLevel(attacker) >= 3 ? 4 : 2;
     team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
       member.battleAttackBonus += attackBonus;
-      if (upgradeLevel(attacker) >= 3) {
-        member.battleSpeedBonus += 2;
-      }
     });
     flags.skillCooldown = 1;
-    log.push(`${attacker.name}发动《${attacker.skill.name}》，全体友方攻击力+${attackBonus}${upgradeLevel(attacker) >= 3 ? '，速度+2' : ''}。`);
+    log.push(`${attacker.name}发动《${attacker.skill.name}》，全体友方攻击力+${attackBonus}。`);
+    if (upgradeLevel(attacker) >= 4) {
+      const commandTarget = team
+        .filter((member) => member.id !== attacker.id && !member.injured && member.hp > 0)
+        .sort((left, right) => effectiveAttack(right) - effectiveAttack(left))[0];
+      if (commandTarget && defender.hp > 0) {
+        log.push(`${attacker.name}指定${commandTarget.name}立即进行一次普通攻击。`);
+        resolveAttack(commandTarget, defender, true, false, team, runtime, log, stats);
+      }
+      return;
+    }
+    if (defender.hp > 0) {
+      log.push(`${attacker.name}随后进行一次普通攻击。`);
+      resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
+    }
     return;
   }
 
   if (attacker.skill.id === 'mari_shield') {
     addFightingSpirit(attacker, runtime, log);
-    if (upgradeLevel(attacker) >= 5 && (flags.fightingSpirit ?? 0) >= 7 && defender.hp > 0) {
-      const remainingHp = defender.hp;
-      defender.hp = 0;
-      if (isAllyAttacker && remainingHp > 0) {
-        getBattleStat(stats, attacker).damageDealt += remainingHp;
-      }
-      log.push(`${attacker.name}战意达到7层，发动《${attacker.skill.name}》直接斩杀${defender.name}。`);
-      tryBossEncore(defender, runtime, log);
-      return;
-    }
-
     flags.mariSkillActive = true;
     resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
     flags.mariSkillActive = false;
@@ -881,9 +983,11 @@ function takeTurn(
       flags.skillCooldown = 1;
     }
     log.push(`${attacker.name}发动《${attacker.skill.name}》${hpLoss > 0 ? `，失去${hpLoss}HP` : ''}，连续攻击${hits}次。`);
+    flags.nicoComboActive = true;
     for (let hit = 0; hit < hits && defender.hp > 0; hit += 1) {
       resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
     }
+    flags.nicoComboActive = false;
     return;
   }
 
@@ -919,13 +1023,10 @@ function takeTurn(
   if (
     attacker.hp > 0 &&
     defender.hp > 0 &&
-    attacker.skill.id === 'rina_double' &&
-    Math.random() < (upgradeLevel(attacker) >= 2 ? 0.5 : 0.3)
+    attacker.passive?.id === 'rina_board' &&
+    Math.random() < (upgradeLevel(attacker) >= 3 ? 0.75 : 0.5)
   ) {
-    if (upgradeLevel(attacker) >= 2) {
-      addShield(attacker, 10, log, '触发Lv2强化');
-    }
-    log.push(`${attacker.name}发动「${attacker.skill.name}」，追加一次攻击。`);
+    log.push(`${attacker.name}发动「${attacker.passive.name}」，追加一次攻击。`);
     resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats);
   }
   if (attacker.hp > 0 && attacker.passive?.id === 'boss_kasumi_stage_growth') {
@@ -942,6 +1043,10 @@ function hasPriorityTurn(character: Character): boolean {
   return character.passive?.id === 'enemy_rurino_first';
 }
 
+function hasAllyOpeningTurn(character: Character): boolean {
+  return character.passive?.id === 'eli_training' && upgradeLevel(character) >= 2;
+}
+
 function runGroupBattle(
   allies: Character[],
   enemy: Character,
@@ -950,6 +1055,7 @@ function runGroupBattle(
   log: string[],
   stats: BattleStats,
 ) {
+  setActiveSecondaryBondFlags(allies, runtime);
   allies.forEach((ally) => prepareCombatant(ally, enemy, true, team, runtime, log));
   prepareCombatant(enemy, allies[0], false, team, runtime, log);
 
@@ -970,6 +1076,13 @@ function runGroupBattle(
         return priorityDifference;
       }
 
+      const allyOpeningDifference =
+        Number(right.isAlly && hasAllyOpeningTurn(right.character)) -
+        Number(left.isAlly && hasAllyOpeningTurn(left.character));
+      if (allyOpeningDifference !== 0) {
+        return allyOpeningDifference;
+      }
+
       const speedDifference = effectiveSpeed(right.character) - effectiveSpeed(left.character);
       if (speedDifference !== 0) {
         return speedDifference;
@@ -984,6 +1097,7 @@ function runGroupBattle(
 
       if (actor.isAlly) {
         if (actor.character.hp > 0) {
+          getFlags(runtime, actor.character.id).openingRound = rounds === 1;
           takeTurn(actor.character, enemy, true, team, runtime, log, stats);
         }
         continue;
@@ -995,6 +1109,7 @@ function runGroupBattle(
       const livingAllies = allies.filter((ally) => ally.hp > 0);
       const firstTarget = livingAllies[Math.floor(Math.random() * livingAllies.length)];
       if (firstTarget) {
+        getFlags(runtime, enemy.id).openingRound = rounds === 1;
         takeTurn(enemy, firstTarget, false, team, runtime, log, stats);
       }
 
@@ -1157,7 +1272,8 @@ export function resolveBattleGroup(
       selectedIds: phase === 'relay' ? [] : battleInput.selectedIds,
       rewardGold,
       log,
-      runtime,      stats,
+      runtime,
+      stats,
 
     },
   };
