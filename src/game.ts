@@ -262,14 +262,14 @@ export function createEnemiesForBattle(type: BattleType, rng: SeedRng, boss?: Bo
 
 export function buildMap(rng: SeedRng): MapNode[] {
   const rowSizes = [
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
-    rngInt(rng, 2, 3),
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
     rngInt(rng, 1, 2),
     1,
   ];
@@ -320,31 +320,15 @@ export function buildMap(rng: SeedRng): MapNode[] {
   for (let row = 0; row < rows.length - 1; row += 1) {
     const currentRow = rows[row];
     const nextRow = rows[row + 1];
-    const inboundIds = new Set<string>();
 
     currentRow.forEach((fromNode) => {
-      const closeNodes = nextRow
-        .filter((toNode) => Math.abs(toNode.col - fromNode.col) <= 1)
-        .sort((left, right) => Math.abs(left.col - fromNode.col) - Math.abs(right.col - fromNode.col));
-      const candidates = closeNodes.length > 0 ? closeNodes : nextRow;
-      const connectCount = Math.min(candidates.length, rngInt(rng, 1, Math.min(2, candidates.length)));
-      const targets = rngSample(rng, candidates, connectCount);
-      fromNode.nextIds = targets.map((target) => target.id);
-      targets.forEach((target) => inboundIds.add(target.id));
-    });
+      if (nextRow.length === 1) {
+        fromNode.nextIds = [nextRow[0].id];
+        return;
+      }
 
-    nextRow.forEach((toNode) => {
-      if (inboundIds.has(toNode.id)) {
-        return;
-      }
-      const fromCandidates = currentRow
-        .filter((fromNode) => Math.abs(fromNode.col - toNode.col) <= 1)
-        .sort((left, right) => Math.abs(left.col - toNode.col) - Math.abs(right.col - toNode.col));
-      const fromNode = rngPick(rng, fromCandidates.length > 0 ? fromCandidates : currentRow);
-      if (!fromNode) {
-        return;
-      }
-      fromNode.nextIds = Array.from(new Set([...fromNode.nextIds, toNode.id]));
+      const sameLaneTarget = nextRow[Math.min(fromNode.col, nextRow.length - 1)];
+      fromNode.nextIds = [sameLaneTarget.id];
     });
   }
 
