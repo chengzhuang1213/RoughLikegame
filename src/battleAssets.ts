@@ -25,7 +25,7 @@ export const ENEMY_ILLUSTRATIONS: Record<string, string> = {
   enemy_ceras: '/cards/Enemy_Images/230Lilienfeld-Yanagida-Ceras-hVBTJn.png',
   elite_kanan: '/cards/Enemy_Images/8Matsuura-Kanan-aT2Td5.png',
   elite_riko: '/cards/Enemy_Images/12Sakurauchi-Riko-p2EuTb.png',
-  elite_umi: '/cards/Enemy_Images/13Sonoda-Umi-rxgV8z.png',
+  elite_megumi: '/cards/Enemy_Images/208Megumi-Fujishima-vQJs20.png',
   elite_kaho: '/cards/Enemy_Images/203Kaho-Hinoshita-PS7Ud5.png',
   elite_emma: '/cards/Enemy_Images/28Emma-Verde-pVzmKV.png',
   elite_kanon: '/cards/Enemy_Images/118Shibuya-Kanon-if8zlW.png',
@@ -34,9 +34,12 @@ export const ENEMY_ILLUSTRATIONS: Record<string, string> = {
   elite_natsumi: '/cards/Enemy_Images/175Onitsuka-Natsumi-6nLfeH.png',
   boss_honoka: '/cards/Enemy_Images/4Kousaka-Honoka-2nSYRU.png',
   boss_chika: '/cards/Enemy_Images/14Takami-Chika-MumE0U.png',
+  boss_hanabi: '/cards/Enemy_Images/270Hanabi-Komagata-hk69uk.png',
   boss_dia: '/cards/Enemy_Images/6Kurosawa-Dia-6ovIG8.png',
   boss_kasumi: '/cards/Enemy_Images/67Nakasu-Kasumi-rQd4Or.png',
+  boss_izumi: '/cards/Enemy_Images/229Izumi-Katsuragi-w8C1z6.png',
   boss_chisato: '/cards/Enemy_Images/120Arashi-Chisato-eySO7L.png',
+  boss_umi: '/cards/Enemy_Images/13Sonoda-Umi-rxgV8z.png',
   boss_maki: '/cards/Enemy_Images/10Nishikino-Maki-UFQB4E.png',
 };
 

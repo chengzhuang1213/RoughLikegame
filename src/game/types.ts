@@ -31,12 +31,15 @@ export type PassiveId =
   | 'elite_kanan_training'
   | 'elite_riko_inspiration'
   | 'elite_umi_low_hp'
+  | 'elite_kanan_ocean_wrath'
   | 'elite_kaho_never_give_up'
   | 'elite_emma_warm_power'
   | 'elite_kanon_center_stage'
   | 'elite_setsuna_focus'
+  | 'elite_setsuna_burning_song'
   | 'elite_shioriko_execution'
   | 'elite_natsumi_traffic'
+  | 'elite_natsumi_little_boss'
   | 'enemy_hanayo_start_hp'
   | 'enemy_hanamaru_low_hp'
   | 'enemy_ruby_first_strike'
@@ -53,7 +56,11 @@ export type PassiveId =
   | 'boss_dia_reduction'
   | 'boss_kasumi_stage_growth'
   | 'boss_chisato_double'
-  | 'boss_maki_growth';
+  | 'boss_chisato_perfect_rhythm'
+  | 'boss_maki_growth'
+  | 'boss_hanabi_counter'
+  | 'boss_izumi_suppression'
+  | 'boss_umi_iron_wall';
 
 export type SkillId =
   | 'ayumu_musou'
@@ -71,7 +78,11 @@ export type SkillId =
   | 'boss_dia_authority'
   | 'boss_kasumi_cutest'
   | 'boss_chisato_training'
-  | 'boss_maki_passion';
+  | 'boss_chisato_double_step'
+  | 'boss_maki_passion'
+  | 'boss_hanabi_position'
+  | 'boss_izumi_pressure'
+  | 'boss_umi_absolute_defense';
 
 export interface Ability<TId extends string> {
   id: TId;
@@ -129,6 +140,8 @@ export interface Character {
   battleSpeedBonus: number;
   shieldGainReduced: boolean;
   healingReduced: boolean;
+  shieldGainMultiplier?: number;
+  healingMultiplier?: number;
   bossTier?: BossTier;
   eliteTier?: EliteTier;
   enemyTier?: EnemyPoolId;
@@ -190,6 +203,11 @@ export interface RuntimeFlags {
   tarotMagicianUsedThisTurn?: boolean;
   tarotMagicianTriggeredLastSkill?: boolean;
   eliteUmiCalloutUsedThisTurn?: boolean;
+  hanabiRoundGuardUsed?: boolean;
+  bossUmiRoundDamageTaken?: number;
+  bossUmiAbsoluteDefenseHits?: number;
+  izumiPressureDebuff?: number;
+  natsumiGrowthTriggered?: boolean;
   campusLeaderOnField?: boolean;
   energeticIdolOnField?: boolean;
   mysteryOnFieldLevel?: 0 | 1 | 2 | 3;

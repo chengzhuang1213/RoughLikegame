@@ -49,6 +49,8 @@ function clearBattleOnlyState(character: Character): Character {
     battleSpeedBonus: 0,
     shieldGainReduced: false,
     healingReduced: false,
+    shieldGainMultiplier: undefined,
+    healingMultiplier: undefined,
     battleMaxHpBonus: 0,
     battleSkin: undefined,
   };
@@ -122,15 +124,30 @@ const BOSS_BATTLE_LINES: Record<string, Partial<Record<'start' | 'win' | 'lose',
     win: '还需要继续努力，不可懈怠。',
     lose: '看来……是我判断失误了。',
   },
+  boss_hanabi: {
+    start: '站位准备好了，接下来就是我的舞台。',
+    win: '节奏没有乱，这就是胜利的理由。',
+    lose: '这一次……你的节拍更漂亮。',
+  },
   boss_kasumi: {
     start: '准备好被霞霞子迷住了吗？',
     win: '哼哼，霞霞子果然最可爱！',
     lose: '欸——怎么会这样啦！',
   },
+  boss_izumi: {
+    start: '目标确认，开始压制。',
+    win: '核心已经被我掌握了。',
+    lose: '判断失误……我会重新计算。',
+  },
   boss_chisato: {
     start: '跟不上节奏的话，可是会被甩开的。',
     win: '看来，你还得再练练呢。',
     lose: '看来……这次是你更快一步。',
+  },
+  boss_umi: {
+    start: '请正面突破我的防线。',
+    win: '攻势虽强，但还不够严整。',
+    lose: '漂亮的突破，我心服口服。',
   },
   boss_maki: {
     start: '别让我失望，认真一点吧。',
@@ -168,7 +185,8 @@ function effectiveSpeed(character: Character): number {
 
 function heal(character: Character, amount: number): number {
   const before = character.hp;
-  const finalAmount = character.healingReduced ? Math.ceil(amount * 0.5) : amount;
+  const multiplier = character.healingMultiplier ?? (character.healingReduced ? 0.5 : 1);
+  const finalAmount = Math.ceil(amount * multiplier);
   character.hp = Math.min(character.maxHp, character.hp + finalAmount);
   return character.hp - before;
 }
@@ -178,9 +196,11 @@ function addShield(character: Character, amount: number, log: string[], reason: 
     return;
   }
 
-  const finalAmount = character.shieldGainReduced ? Math.ceil(amount * 0.5) : amount;
+  const multiplier = character.shieldGainMultiplier ?? (character.shieldGainReduced ? 0.5 : 1);
+  const finalAmount = Math.ceil(amount * multiplier);
   character.shield += finalAmount;
-  const text = `${character.name}${reason}，获得${finalAmount}护盾${character.shieldGainReduced ? "（护盾削弱，获得量减半）" : ""}。`;
+  const reductionText = multiplier < 1 ? `（护盾削弱，获得量降低${Math.round((1 - multiplier) * 100)}%）` : '';
+  const text = `${character.name}${reason}，获得${finalAmount}护盾${reductionText}。`;
   log.push(text);
   emitBattleEvent(emit, {
     kind: 'shield',
@@ -208,25 +228,29 @@ function applyStatus(
   apply();
 }
 
-function applyShieldReduction(target: Character, log: string[]) {
-  if (target.shieldGainReduced) {
+function applyShieldReduction(target: Character, log: string[], multiplier = 0.5) {
+  const currentMultiplier = target.shieldGainMultiplier ?? (target.shieldGainReduced ? 0.5 : 1);
+  if (currentMultiplier <= multiplier) {
     return;
   }
 
   applyStatus(target, '护盾削弱', () => {
     target.shieldGainReduced = true;
-    log.push(`${target.name}受到护盾削弱，后续获得的护盾量减半。`);
+    target.shieldGainMultiplier = multiplier;
+    log.push(`${target.name}受到护盾削弱，后续获得的护盾量降低${Math.round((1 - multiplier) * 100)}%。`);
   }, log);
 }
 
-function applyHealingReduction(target: Character, log: string[]) {
-  if (target.healingReduced) {
+function applyHealingReduction(target: Character, log: string[], multiplier = 0.5) {
+  const currentMultiplier = target.healingMultiplier ?? (target.healingReduced ? 0.5 : 1);
+  if (currentMultiplier <= multiplier) {
     return;
   }
 
   applyStatus(target, '回血削弱', () => {
     target.healingReduced = true;
-    log.push(`${target.name}受到回血削弱，后续回血效果减半。`);
+    target.healingMultiplier = multiplier;
+    log.push(`${target.name}受到回血削弱，后续回血效果降低${Math.round((1 - multiplier) * 100)}%。`);
   }, log);
 }
 
@@ -299,6 +323,30 @@ function prepareCombatant(
 
   if (isAlly && actor.passive?.id === 'eli_training') {
     applyHealingReduction(_opponent, log);
+  }
+
+  if (!isAlly && actor.passive?.id === 'boss_chisato_perfect_rhythm') {
+    team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
+      applyHealingReduction(member, log, 0.7);
+      applyShieldReduction(member, log, 0.7);
+    });
+    log.push(`${actor.name}发动「${actor.passive.name}」，敌方全体治疗与护盾获得降低30%。`);
+  }
+
+  if (!isAlly && actor.passive?.id === 'boss_izumi_suppression') {
+    const suppressionTarget = team
+      .filter((member) => !member.injured && member.hp > 0)
+      .sort((left, right) => {
+        const levelDifference = upgradeLevel(right) - upgradeLevel(left);
+        if (levelDifference !== 0) {
+          return levelDifference;
+        }
+        return effectiveAttack(right) - effectiveAttack(left);
+      })[0];
+    if (suppressionTarget) {
+      suppressionTarget.battleAttackBonus -= 3;
+      log.push(`${actor.name}发动「${actor.passive.name}」，压制${suppressionTarget.name}，攻击-3。`);
+    }
   }
 
   if (isAlly && hasSecondaryBond(team, 'full_speed')) {
@@ -449,6 +497,58 @@ function applyDamageToShieldAndHp(defender: Character, damage: number) {
   const shieldDamage = Math.min(defender.shield, damage);
   defender.shield -= shieldDamage;
   defender.hp = Math.max(0, defender.hp - (damage - shieldDamage));
+}
+
+function dealDirectDamage(
+  attacker: Character,
+  targets: Character[],
+  amount: number,
+  isAllyAttacker: boolean,
+  stats: BattleStats,
+  log: string[],
+  emit: BattleEventEmitter | undefined,
+  reason: string,
+) {
+  targets.filter((target) => target.hp > 0).forEach((target) => {
+    const shieldBefore = target.shield;
+    const durabilityBefore = target.hp + target.shield;
+    applyDamageToShieldAndHp(target, amount);
+    const actualDamage = Math.min(amount, durabilityBefore);
+    const shieldBlocked = Math.min(shieldBefore, actualDamage);
+    const text = `${attacker.name}发动「${reason}」，对${target.name}造成${amount}点伤害，${target.name}剩余${target.hp}HP。`;
+    log.push(text);
+    emitBattleEvent(emit, {
+      kind: 'damage',
+      text,
+      actorId: attacker.id,
+      targetId: target.id,
+      actorName: attacker.name,
+      targetName: target.name,
+      amount: actualDamage,
+      shieldBlocked,
+      hpLeft: target.hp,
+    });
+    if (actualDamage > 0 && isAllyAttacker) {
+      getBattleStat(stats, attacker).damageDealt += actualDamage;
+    }
+    if (actualDamage > 0 && !isAllyAttacker) {
+      const targetStats = getBattleStat(stats, target);
+      targetStats.damageTaken += actualDamage - shieldBlocked;
+      targetStats.shieldBlocked += shieldBlocked;
+    }
+  });
+}
+
+function expireIzumiPressureDebuff(actor: Character, runtime: RuntimeState, log: string[]) {
+  const flags = getFlags(runtime, actor.id);
+  const stacks = flags.izumiPressureDebuff ?? 0;
+  if (stacks <= 0) {
+    return;
+  }
+
+  actor.battleAttackBonus += stacks;
+  flags.izumiPressureDebuff = 0;
+  log.push(`${actor.name}的压制效果结束，攻击恢复${stacks}点。`);
 }
 
 function addFightingSpirit(character: Character, runtime: RuntimeState, log: string[], amount = 1) {
@@ -624,13 +724,13 @@ function calculateDamage(
     log.push(`${attacker.name}触发「元气偶像」，首回合攻击+3。`);
   }
 
-  if (attacker.passive?.id === 'elite_natsumi_traffic') {
+  if (attacker.passive?.id === 'elite_natsumi_little_boss') {
     criticalChance = 1;
   }
 
   const critical = battleRandom() < Math.min(1, criticalChance);
   if (critical) {
-    const criticalMultiplier = attacker.passive?.id === 'elite_natsumi_traffic' ? 2.5 : 2;
+    const criticalMultiplier = 2;
     damage *= criticalMultiplier;
     log.push(`${attacker.name}打出暴击。`);
   }
@@ -750,6 +850,30 @@ function resolveAttack(
     log.push(`${defender.name}发动「${defender.passive.name}」，首次受到伤害减半。`);
   }
 
+  if (damage > 0 && defender.passive?.id === 'boss_hanabi_counter' && !defenderFlags.hanabiRoundGuardUsed) {
+    defenderFlags.hanabiRoundGuardUsed = true;
+    damage = Math.max(1, Math.ceil(damage * 0.5));
+    log.push(`${defender.name}发动「${defender.passive.name}」，本回合首次受到的伤害降低50%。`);
+  }
+
+  if (damage > 0 && defender.skill.id === 'boss_umi_absolute_defense' && (defenderFlags.bossUmiAbsoluteDefenseHits ?? 0) > 0) {
+    defenderFlags.bossUmiAbsoluteDefenseHits = Math.max(0, (defenderFlags.bossUmiAbsoluteDefenseHits ?? 0) - 1);
+    damage = Math.max(1, Math.ceil(damage * 0.5));
+    log.push(`${defender.name}发动「${defender.skill.name}」，受到的本回合前3次伤害降低50%。`);
+  }
+
+  if (damage > 0 && defender.passive?.id === 'boss_umi_iron_wall') {
+    const takenThisRound = defenderFlags.bossUmiRoundDamageTaken ?? 0;
+    const remainingCap = Math.max(0, 40 - takenThisRound);
+    if (remainingCap <= 0) {
+      damage = 0;
+      log.push(`${defender.name}发动「${defender.passive.name}」，本回合伤害上限已满，超出伤害无效。`);
+    } else if (damage > remainingCap) {
+      log.push(`${defender.name}发动「${defender.passive.name}」，本回合最多再承受${remainingCap}点伤害。`);
+      damage = remainingCap;
+    }
+  }
+
   if (
     damage > 0 &&
     isAllyDefender &&
@@ -776,6 +900,9 @@ function resolveAttack(
   const defenderDurabilityBefore = defender.hp + defender.shield;
   applyDamageToShieldAndHp(defender, damage);
   const actualDamage = Math.min(damage, defenderDurabilityBefore);
+  if (actualDamage > 0 && defender.passive?.id === 'boss_umi_iron_wall') {
+    defenderFlags.bossUmiRoundDamageTaken = (defenderFlags.bossUmiRoundDamageTaken ?? 0) + actualDamage;
+  }
   const attackText = `${attacker.name}攻击${defender.name}，造成${damage}伤害，${defender.name}剩余${defender.hp}HP。`;
   log.push(attackText);
   if (roleAdjustmentText) {
@@ -1052,6 +1179,27 @@ function takeTurn(
   applyLittleDevilTurnStart(attacker, runtime, log, emit);
   applyNozoeliTurnStart(attacker, runtime, log);
 
+  if (attacker.passive?.id === 'elite_kanan_ocean_wrath') {
+    const targets = isAllyAttacker ? [defender] : team.filter((member) => !member.injured && member.hp > 0);
+    dealDirectDamage(attacker, targets, 2, isAllyAttacker, stats, log, emit, attacker.passive.name);
+  }
+
+  if (attacker.passive?.id === 'elite_setsuna_burning_song') {
+    const targets = isAllyAttacker ? [defender] : team.filter((member) => !member.injured && member.hp > 0);
+    dealDirectDamage(attacker, targets, 4, isAllyAttacker, stats, log, emit, attacker.passive.name);
+    attacker.attack += 1;
+    log.push(`${attacker.name}发动「${attacker.passive.name}」，攻击永久+1。`);
+  }
+
+  if (attacker.passive?.id === 'elite_natsumi_little_boss') {
+    flags.turnsTaken = (flags.turnsTaken ?? 0) + 1;
+    if (!flags.natsumiGrowthTriggered && flags.turnsTaken >= 5) {
+      flags.natsumiGrowthTriggered = true;
+      attacker.attack += 5;
+      log.push(`${attacker.name}发动「${attacker.passive.name}」，第五回合开始攻击+5。`);
+    }
+  }
+
   if (attacker.passive?.id === 'nozomi_turn_shield') {
     addShield(attacker, upgradeLevel(attacker) >= 3 ? 5 : 3, log, `发动「${attacker.passive.name}」`, emit);
   }
@@ -1204,6 +1352,46 @@ function takeTurn(
       addShield(attacker, 25, log, `发动「${attacker.skill.name}」`, emit);
     }
     flags.skillCooldown = 1;
+    return;
+  }
+
+  if (attacker.skill.id === 'boss_hanabi_position' && skillCooldown <= 0) {
+    addShield(attacker, 10, log, `发动「${attacker.skill.name}」`, emit);
+    flags.skillCooldown = 1;
+    if (defender.hp > 0) {
+      log.push(`${attacker.name}发动「${attacker.skill.name}」，立即进行一次普通攻击。`);
+      resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats, emit);
+    }
+    return;
+  }
+
+  if (attacker.skill.id === 'boss_izumi_pressure' && skillCooldown <= 0) {
+    flags.nextAttackMultiplier = 1.5;
+    flags.skillCooldown = 1;
+    team.filter((member) => !member.injured && member.hp > 0).forEach((member) => {
+      member.battleAttackBonus -= 1;
+      const memberFlags = getFlags(runtime, member.id);
+      memberFlags.izumiPressureDebuff = (memberFlags.izumiPressureDebuff ?? 0) + 1;
+    });
+    log.push(`${attacker.name}发动「${attacker.skill.name}」，本次攻击造成1.5倍伤害，并使敌方全体攻击-1。`);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats, emit);
+    return;
+  }
+
+  if (attacker.skill.id === 'boss_umi_absolute_defense' && skillCooldown <= 0) {
+    flags.bossUmiAbsoluteDefenseHits = 3;
+    flags.skillCooldown = 1;
+    log.push(`${attacker.name}发动「${attacker.skill.name}」，本回合受到的前三次伤害降低50%。`);
+  }
+
+  if (attacker.skill.id === 'boss_chisato_double_step' && skillCooldown <= 0) {
+    flags.skillCooldown = 1;
+    log.push(`${attacker.name}发动「${attacker.skill.name}」，连续攻击两次。`);
+    resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats, emit);
+    if (defender.hp > 0 && attacker.hp > 0) {
+      flags.nextAttackMultiplier = 0.5;
+      resolveAttack(attacker, defender, isAllyAttacker, !isAllyAttacker, team, runtime, log, stats, emit);
+    }
     return;
   }
 
@@ -1377,6 +1565,12 @@ function runGroupBattle(
     const roundText = `第${rounds}回合。`;
     log.push(roundText);
     emitLogEvent(emit, 'round', roundText);
+    [...allies, enemy].forEach((unit) => {
+      const unitFlags = getFlags(runtime, unit.id);
+      unitFlags.hanabiRoundGuardUsed = false;
+      unitFlags.bossUmiRoundDamageTaken = 0;
+      unitFlags.bossUmiAbsoluteDefenseHits = 0;
+    });
     const turnOrder = [
       ...allies
         .filter((ally) => ally.hp > 0)
@@ -1411,6 +1605,7 @@ function runGroupBattle(
         if (actor.character.hp > 0) {
           getFlags(runtime, actor.character.id).openingRound = rounds === 1;
           takeTurn(actor.character, enemy, true, team, runtime, log, stats, emit);
+          expireIzumiPressureDebuff(actor.character, runtime, log);
         }
         continue;
       }
@@ -1423,6 +1618,7 @@ function runGroupBattle(
       if (firstTarget) {
         getFlags(runtime, enemy.id).openingRound = rounds === 1;
         takeTurn(enemy, firstTarget, false, team, runtime, log, stats, emit);
+        expireIzumiPressureDebuff(enemy, runtime, log);
       }
 
       for (const extraTarget of livingAllies) {
