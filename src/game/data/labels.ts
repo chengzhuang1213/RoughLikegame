@@ -37,6 +37,7 @@ export const NODE_LABELS: Record<NodeType, string> = {
   shop: '商店',
   rest: '休息处',
   boss: 'Boss',
+  question: '机遇',
 };
 
 export const REWARD_GOLD: Record<BattleType, number> = {

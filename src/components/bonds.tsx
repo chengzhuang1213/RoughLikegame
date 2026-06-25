@@ -8,7 +8,7 @@ import {
   getActiveBonds,
   getActiveSecondaryBonds,
 } from '../game';
-import { BOND_LOGO_SRC } from '../assets';
+import { BOND_LOGO_SRC, bondBackgroundStyle } from '../assets';
 import { Avatar } from './common';
 import { getUpgradeEffectLines } from '../game/data/upgrades';
 
@@ -126,7 +126,7 @@ export function CompactRunSidePanel({ team, onRestart }: { team: Character[]; on
         </div>
         <div className="bond-progress-list">
           {visibleBonds.map((bond) => (
-            <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'} ${flashingBondIds.has(bond.id) ? 'bond-flash' : ''}`} key={bond.id} tabIndex={0}>
+            <div className={`bond-progress-row bond-theme-card ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'} ${flashingBondIds.has(bond.id) ? 'bond-flash' : ''}`} key={bond.id} style={bondBackgroundStyle(bond.id)} tabIndex={0}>
               <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
               <em>{bond.count}/{bond.total}</em>
               <div className="dock-popover bond-dock-popover">
@@ -187,11 +187,12 @@ interface BondItemProps {
   active: boolean;
   secondary?: boolean;
   logoSrc?: string;
+  bondId?: string;
 }
 
-export function BondItem({ name, count, total, details, memberIds, ownedIds, active, secondary = false, logoSrc }: BondItemProps) {
+export function BondItem({ name, count, total, details, memberIds, ownedIds, active, secondary = false, logoSrc, bondId }: BondItemProps) {
   return (
-    <div className={`bond-item ${active ? 'active' : ''} ${secondary && active ? 'secondary-active' : ''}`}>
+    <div className={`bond-item bond-theme-card ${active ? 'active' : ''} ${secondary && active ? 'secondary-active' : ''}`} style={bondBackgroundStyle(bondId)}>
       <div className="bond-item-heading">
         {logoSrc && <img className="bond-logo" src={logoSrc} alt="" />}
         <div>
@@ -215,11 +216,12 @@ interface BondTagProps {
   memberIds: string[];
   ownedIds: Set<string>;
   summary?: string;
+  bondId?: string;
 }
 
-export function BondTag({ className = '', label, memberIds, ownedIds, summary }: BondTagProps) {
+export function BondTag({ className = '', label, memberIds, ownedIds, summary, bondId }: BondTagProps) {
   return (
-    <div className={`group-tag bond-tag ${className}`.trim()}>
+    <div className={`group-tag bond-tag ${className}`.trim()} style={bondBackgroundStyle(bondId)}>
       <span>{label}</span>
       <BondMemberPopover memberIds={memberIds} ownedIds={ownedIds} summary={summary} />
     </div>
@@ -253,6 +255,7 @@ export function BondPanel({ team }: { team: Character[] }) {
                       : ['再集齐1名成员激活2人羁绊。']
                   }
                   key={bond.group.id}
+                  bondId={bond.group.id}
                   memberIds={bond.group.memberIds}
                   logoSrc={BOND_LOGO_SRC[bond.group.id]}
                   name={bond.group.name}
@@ -271,6 +274,7 @@ export function BondPanel({ team }: { team: Character[] }) {
                   count={activeBond.count}
                   details={activeBond.active ? [activeBond.bond.description] : ['再集齐1名成员激活。']}
                   key={activeBond.bond.id}
+                  bondId={activeBond.bond.id}
                   memberIds={activeBond.bond.memberIds}
                   logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
                   name={activeBond.bond.name}

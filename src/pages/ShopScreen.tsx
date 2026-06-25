@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Character, CharacterTemplate } from '../game';
 import { GROUP_LABELS, RARITY_LABELS, ROLE_LABELS, getActiveBonds, getActiveSecondaryBonds } from '../game';
-import { BOND_LOGO_SRC, DRAFT_IMAGE_BY_ID } from '../assets';
+import { BOND_LOGO_SRC, DRAFT_IMAGE_BY_ID, bondBackgroundStyle } from '../assets';
 import { Avatar } from '../components/common';
 import { getEnhancementChangeLines, getUpgradeEffectLines, HighlightText, maxUpgradeLevel } from '../game/data/upgrades';
 
@@ -190,7 +190,7 @@ function ShopRunPreview({ team }: { team: Character[] }) {
         <strong>羁绊</strong>
         <div className="shop-bond-strip">
           {visibleBonds.length > 0 ? visibleBonds.map((bond) => (
-            <div className={`shop-bond-chip ${bond.active ? 'active' : 'inactive'}`} key={bond.id}>
+            <div className={`shop-bond-chip bond-theme-card ${bond.active ? 'active' : 'inactive'}`} key={bond.id} style={bondBackgroundStyle(bond.id)}>
               {bond.logoSrc && <img src={bond.logoSrc} alt="" />}
               <span>{bond.name}</span>
               <small>{bond.count}/{bond.total}</small>

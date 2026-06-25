@@ -5,8 +5,8 @@ import { Avatar } from '../components/common';
 export type HealType = 'small' | 'large';
 
 const HEAL_OPTIONS: Record<HealType, { label: string; cost: number; amount: number; full?: boolean }> = {
-  small: { label: '???', cost: 20, amount: 15 },
-  large: { label: '???', cost: 50, amount: 50 },
+  small: { label: '小治疗', cost: 20, amount: 15 },
+  large: { label: '大治疗', cost: 50, amount: 50 },
 };
 const REVIVE_COST = 40;
 

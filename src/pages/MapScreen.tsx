@@ -13,7 +13,7 @@ import {
   type Character,
   type MapNode,
 } from '../game';
-import { BOND_LOGO_SRC, NODE_ICON_SRC } from '../assets';
+import { BOND_LOGO_SRC, NODE_ICON_SRC, bondBackgroundStyle } from '../assets';
 import { Avatar } from '../components/common';
 
 export interface MapScreenProps {
@@ -35,7 +35,7 @@ type MapModal = 'team' | 'bonds' | 'boss' | 'events' | 'restart' | null;
 
 function BossForecast({ boss, onOpen }: { boss: BossTemplate; onOpen: () => void }) {
   return (
-    <section className="boss-forecast" aria-label="本层 Boss 预告">
+    <section className={`boss-forecast boss-tier-${boss.bossTier}`} aria-label="本层 Boss 预告">
       <div className="boss-portrait-strip">
         <Avatar character={boss} label={boss.name} />
       </div>
@@ -58,8 +58,9 @@ const NODE_HELP: Record<MapNode['type'], string> = {
   battle: '击败敌人',
   elite: '更强敌人',
   shop: '招募角色/道具',
-  rest: '恢复生命/移除卡牌',
+  rest: '恢复生命',
   boss: '击败Boss前往下一层',
+  question: '随机事件/机遇房',
 };
 const MAP_ROW_Y: Record<number, number> = {
   5: 8,
@@ -271,7 +272,7 @@ function BondProgressDock({ team, onOpenDetails, flashingBondIds }: { team: Char
       </div>
       <div className="bond-progress-list">
         {visibleBonds.map((bond) => (
-          <div className={`bond-progress-row ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'} ${flashingBondIds?.has(bond.id) ? 'bond-flash' : ''}`} key={bond.id} tabIndex={0}>
+          <div className={`bond-progress-row bond-theme-card ${bond.secondary ? 'secondary' : ''} ${bond.active ? 'active' : 'inactive'} ${flashingBondIds?.has(bond.id) ? 'bond-flash' : ''}`} key={bond.id} style={bondBackgroundStyle(bond.id)} tabIndex={0}>
             <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
             <em>{bond.count}/{bond.total}</em>
             <div className="dock-popover bond-dock-popover">
@@ -287,7 +288,7 @@ function BondProgressDock({ team, onOpenDetails, flashingBondIds }: { team: Char
 }
 
 function MapLegend({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
-  const entries: MapNode['type'][] = ['battle', 'elite', 'shop', 'rest', 'boss'];
+  const entries: MapNode['type'][] = ['battle', 'elite', 'shop', 'rest', 'question', 'boss'];
 
   return (
     <aside className={`map-legend ${expanded ? 'expanded' : 'collapsed'}`}>
@@ -388,7 +389,7 @@ function TeamDetail({ team }: { team: Character[] }) {
   return (
     <div className="map-detail-list">
       {team.map((member) => (
-        <div className="map-detail-row" key={member.id}>
+        <div className={`map-detail-row rarity-${member.rarity}`} key={member.id}>
           <Avatar character={member} label={member.name} />
           <div>
             <strong>{member.name}</strong>
@@ -435,7 +436,7 @@ function BondDetail({ team }: { team: Character[] }) {
     <div className="map-detail-list">
       {bonds.length === 0 && <p className="map-empty-copy">{'\u5f53\u524d\u8fd8\u6ca1\u6709\u7f81\u7eca\u8fdb\u5ea6\u3002'}</p>}
       {bonds.map((bond) => (
-        <div className={'map-detail-row bond-row ' + (bond.active ? 'active' : '')} key={bond.id}>
+        <div className={'map-detail-row bond-row bond-theme-card ' + (bond.active ? 'active' : '')} key={bond.id} style={bondBackgroundStyle(bond.id)}>
           <span className="bond-dot"><img src={bond.logoSrc} alt="" /></span>
           <div>
             <strong>{bond.name} {bond.count}/{bond.total}</strong>

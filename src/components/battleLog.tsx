@@ -2,10 +2,15 @@ import { useState } from 'react';
 import type { BattleState, BattleStats, Character, CharacterBattleStats } from '../game';
 import { Avatar } from './common';
 
-function getOrderedStats(team: Character[], stats: BattleStats): CharacterBattleStats[] {
+type DamageMeterStat = CharacterBattleStats & {
+  character: Character;
+};
+
+function getOrderedStats(team: Character[], stats: BattleStats): DamageMeterStat[] {
   return team
     .map((member) => ({
       characterId: member.id,
+      character: member,
       name: member.name,
       damageDealt: stats[member.id]?.damageDealt ?? 0,
       damageTaken: stats[member.id]?.damageTaken ?? 0,
@@ -15,40 +20,41 @@ function getOrderedStats(team: Character[], stats: BattleStats): CharacterBattle
     .sort((left, right) => right.damageDealt - left.damageDealt);
 }
 
-export function DamageMeter({ stats, team, title }: { stats: BattleStats; team: Character[]; title: string }) {
+export function DamageMeter({ stats, team, title, compact = false }: { stats: BattleStats; team: Character[]; title: string; compact?: boolean }) {
   const orderedStats = getOrderedStats(team, stats);
   const maxDamage = Math.max(1, ...orderedStats.map((stat) => stat.damageDealt));
   const maxTaken = Math.max(1, ...orderedStats.map((stat) => stat.damageTaken));
   const maxShieldBlocked = Math.max(1, ...orderedStats.map((stat) => stat.shieldBlocked));
+  const labels = compact
+    ? { dealt: '伤害', taken: '承伤', shield: '护盾' }
+    : { dealt: '造成伤害', taken: '承受伤害', shield: '护盾抵挡' };
 
   return (
-    <section className="damage-meter" aria-label={title}>
+    <section className={`damage-meter ${compact ? 'damage-meter-compact' : ''}`.trim()} aria-label={title}>
       <h3>{title}</h3>
       <div className="damage-meter-list">
         {orderedStats.map((stat) => (
-          <div className={`damage-meter-row ${stats[stat.characterId] ? '' : 'not-deployed'}`.trim()} key={stat.characterId}>
-            {team.find((member) => member.id === stat.characterId) && (
-              <div className="damage-meter-avatar">
-                <Avatar character={team.find((member) => member.id === stat.characterId)!} label={stat.name} small />
-              </div>
-            )}
+          <div className={`damage-meter-row rarity-${stat.character.rarity} ${stats[stat.characterId] ? '' : 'not-deployed'}`.trim()} key={stat.characterId}>
+            <div className="damage-meter-avatar">
+              <Avatar character={stat.character} label={stat.name} small />
+            </div>
             <div className="damage-meter-bars">
               <div className="damage-bar-line damage-dealt-line">
-                <span className="damage-bar-label">造成伤害</span>
+                <span className="damage-bar-label">{labels.dealt}</span>
                 <span className="damage-bar-track">
                   <span style={{ width: `${stat.damageDealt === 0 ? 0 : Math.max(8, Math.round((stat.damageDealt / maxDamage) * 100))}%` }} />
                 </span>
                 <b>{stat.damageDealt}</b>
               </div>
               <div className="damage-bar-line damage-taken-line">
-                <span className="damage-bar-label">承受伤害</span>
+                <span className="damage-bar-label">{labels.taken}</span>
                 <span className="damage-bar-track">
                   <span style={{ width: `${stat.damageTaken === 0 ? 0 : Math.max(8, Math.round((stat.damageTaken / maxTaken) * 100))}%` }} />
                 </span>
                 <b>{stat.damageTaken}</b>
               </div>
               <div className="damage-bar-line shield-blocked-line">
-                <span className="damage-bar-label">护盾抵挡</span>
+                <span className="damage-bar-label">{labels.shield}</span>
                 <span className="damage-bar-track">
                   <span style={{ width: `${stat.shieldBlocked === 0 ? 0 : Math.max(8, Math.round((stat.shieldBlocked / maxShieldBlocked) * 100))}%` }} />
                 </span>

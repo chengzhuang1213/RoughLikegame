@@ -96,16 +96,57 @@
 .draft-card.rarity-star {
   --rarity-border: #8e5ad7;
   --rarity-soft: rgba(142, 90, 215, 0.18);
+  background:
+    linear-gradient(180deg, #eadbff 0%, #c89af2 100%);
 }
 
 .draft-card.rarity-star .draft-portrait {
   background:
-    linear-gradient(180deg, #efe4ff 0%, #b98cf0 100%);
+    linear-gradient(180deg, rgba(239, 228, 255, 0.82) 0%, rgba(185, 140, 240, 0.72) 100%);
+}
+
+.draft-card.rarity-star .draft-card-body {
+  background:
+    linear-gradient(180deg, rgba(228, 208, 255, 0.92) 0%, rgba(196, 151, 238, 0.88) 100%);
+}
+
+.draft-card.rarity-star .draft-stats,
+.draft-card.rarity-star .draft-ability {
+  border-color: rgba(105, 63, 166, 0.24);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.draft-card.rarity-star .draft-stats span {
+  border-color: rgba(105, 63, 166, 0.22);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .draft-card.rarity-normal {
-  --rarity-border: #ffffff;
-  --rarity-soft: rgba(175, 187, 204, 0.24);
+  --rarity-border: #9ed4f0;
+  --rarity-soft: rgba(82, 166, 211, 0.2);
+  background:
+    linear-gradient(180deg, #eaf8ff 0%, #bfe5f7 100%);
+}
+
+.draft-card.rarity-normal .draft-portrait {
+  background:
+    linear-gradient(180deg, rgba(241, 251, 255, 0.92) 0%, rgba(181, 224, 245, 0.76) 100%);
+}
+
+.draft-card.rarity-normal .draft-card-body {
+  background:
+    linear-gradient(180deg, rgba(232, 248, 255, 0.94) 0%, rgba(190, 229, 247, 0.9) 100%);
+}
+
+.draft-card.rarity-normal .draft-stats,
+.draft-card.rarity-normal .draft-ability {
+  border-color: rgba(82, 148, 194, 0.24);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.draft-card.rarity-normal .draft-stats span {
+  border-color: rgba(82, 148, 194, 0.2);
+  background: rgba(255, 255, 255, 0.54);
 }
 
 .draft-portrait {

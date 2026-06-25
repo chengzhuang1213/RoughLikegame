@@ -59,7 +59,7 @@
 .sakura-layer {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
 }
@@ -120,13 +120,6 @@
   }
   100% {
     transform: translate3d(var(--petal-drift), 112vh, 0) rotate(calc(var(--petal-rotate) + 520deg));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sakura-petal {
-    animation: none;
-    transform: translate3d(0, 24vh, 0) rotate(var(--petal-rotate));
   }
 }
 

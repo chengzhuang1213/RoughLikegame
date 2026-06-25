@@ -9,7 +9,7 @@ import {
   getActiveBonds,
   getActiveSecondaryBonds,
 } from '../game';
-import { BOND_LOGO_SRC } from '../assets';
+import { BOND_LOGO_SRC, bondBackgroundStyle } from '../assets';
 import { Avatar, UpgradeLevelBadge } from '../components/common';
 import { BattleLog, DamageMeter } from '../components/battleLog';
 import { CharacterCard } from '../components/cards';
@@ -49,6 +49,18 @@ export interface BattleScreenProps {
 
 function hpPercent(character: Pick<Character, 'hp' | 'maxHp'>) {
   return `${Math.max(0, Math.min(100, Math.round((character.hp / character.maxHp) * 100)))}%`;
+}
+
+function enemyThemeClass(character: Character) {
+  if (character.rarity === 'elite') {
+    return 'enemy-theme-elite';
+  }
+
+  if (character.rarity === 'boss') {
+    return `enemy-theme-boss-${character.bossTier ?? 1}`;
+  }
+
+  return '';
 }
 
 function battleFloatLabel(character: Character, replayEvent: ReplayEvent | null | undefined) {
@@ -220,7 +232,7 @@ function BattleStandee({ character, replayEvent, side, defeated = false }: { cha
 
   return (
     <div
-      className={`battle-standee battle-standee-${side} rarity-${character.rarity} ${defeated ? 'defeated' : ''} ${isActing ? 'is-acting' : ''} ${isTarget ? `is-${replayEvent?.kind}` : ''}`.trim()}
+      className={`battle-standee battle-standee-${side} rarity-${character.rarity} ${side === 'enemy' ? enemyThemeClass(character) : ''} ${defeated ? 'defeated' : ''} ${isActing ? 'is-acting' : ''} ${isTarget ? `is-${replayEvent?.kind}` : ''}`.trim()}
       style={{ '--standee-scale': scale, '--callout-bottom': calloutBottom } as CSSProperties}
     >
       {floatLabel && <span className={`battle-float-text float-${replayEvent?.kind}`} key={`${replayEvent?.text}-${character.id}-${floatLabel}`}>{floatLabel}</span>}
@@ -243,7 +255,7 @@ function BattleUnitCard({ character, defeated = false, replayEvent }: { characte
   const floatLabel = battleFloatLabel(character, replayEvent);
 
   return (
-    <div className={`battle-unit-card rarity-${character.rarity} ${defeated ? 'defeated' : ''} ${isActing ? 'is-acting' : ''} ${isTarget ? `is-${replayEvent?.kind}` : ''}`.trim()}>
+    <div className={`battle-unit-card rarity-${character.rarity} ${enemyThemeClass(character)} ${defeated ? 'defeated' : ''} ${isActing ? 'is-acting' : ''} ${isTarget ? `is-${replayEvent?.kind}` : ''}`.trim()}>
       {floatLabel && <span className={`battle-float-text float-${replayEvent?.kind}`} key={`${replayEvent?.text}-${floatLabel}`}>{floatLabel}</span>}
       <Avatar character={character} label={character.name.replace('对手 ', '').replace('敌方', '').replace('Boss ', '').replace('精英 ', '')} />
       <div className="battle-unit-copy">
@@ -316,7 +328,7 @@ function BattleTeamPanel({ team, liveStats }: { team: Character[]; liveStats: Ba
         <div className="battle-bond-logo-grid">
           {visibleBonds.length > 0 ? (
             visibleBonds.map((bond) => (
-              <div className={`battle-bond-logo-item ${bond.active ? 'active' : 'inactive'}`} key={bond.id} tabIndex={0}>
+              <div className={`battle-bond-logo-item bond-theme-card ${bond.active ? 'active' : 'inactive'}`} key={bond.id} style={bond.active ? bondBackgroundStyle(bond.id) : undefined} tabIndex={0}>
                 <img src={bond.logoSrc} alt="" />
                 <div className="battle-mini-popover">
                   <strong>{bond.name} {bond.count}/{bond.total}</strong>
@@ -329,7 +341,7 @@ function BattleTeamPanel({ team, liveStats }: { team: Character[]; liveStats: Ba
           )}
         </div>
       </section>
-      <DamageMeter stats={liveStats} team={team} title="本场伤害" />
+      <DamageMeter stats={liveStats} team={team} title="本场伤害" compact />
     </aside>
   );
 }
@@ -341,7 +353,7 @@ function BattleSlotStrip({ selectedMembers, slots, replayEvent }: { selectedMemb
     <section className="battle-slot-strip" aria-label="出战位" style={{ '--slot-count': slots } as CSSProperties}>
       {slotItems.map((member, index) => (
         <div
-          className={`battle-slot ${member ? 'filled' : ''} ${member && replayEvent?.actorName && nameMatches(member, replayEvent.actorName) ? 'is-acting' : ''} ${member && isReplayTarget(member, replayEvent) ? `is-${replayEvent?.kind}` : ''}`.trim()}
+          className={`battle-slot ${member ? `filled rarity-${member.rarity}` : ''} ${member && replayEvent?.actorName && nameMatches(member, replayEvent.actorName) ? 'is-acting' : ''} ${member && isReplayTarget(member, replayEvent) ? `is-${replayEvent?.kind}` : ''}`.trim()}
           key={member?.id ?? `slot-${index}`}
         >
           {member ? (
@@ -398,12 +410,14 @@ export function BattleScreen({ battle, boss, gold, team, pendingEnhance, pending
   const canStart = (battle.phase === 'select' || battle.phase === 'relay') && battle.selectedIds.length === battle.slots;
   const isWon = battle.phase === 'won';
   const isBossWon = isWon && battle.type === 'boss' && boss.bossTier < 3;
+  const isFinalBossWon = isWon && battle.type === 'boss' && boss.bossTier === 3;
   const selectedMemberIdsKey = selectedMembers.map((member) => member.id).join('|');
   const replayEvents = useMemo<ReplayEvent[]>(
     () => buildReplayEvents(battle.events, battle.log, selectedMembers, [...team, ...battle.enemies]),
     [battle.enemies, battle.events, battle.log, selectedMemberIdsKey, team],
   );
-  const replayEnabled = isReplayPhase(battle.phase) && replayEvents.length > 0;
+  const canNotifyReplayDone = isReplayPhase(battle.phase);
+  const replayEnabled = canNotifyReplayDone && replayEvents.length > 0;
   const [replayStep, setReplayStep] = useState(0);
   const replayKey = `${battle.nodeId}-${battle.phase}-${battle.activeEnemyIndex}-${battle.log.length}`;
   const currentReplayEvent = replayEnabled ? replayEvents[Math.min(replayStep, replayEvents.length - 1)] : null;
@@ -416,7 +430,7 @@ export function BattleScreen({ battle, boss, gold, team, pendingEnhance, pending
   const defeatedNames = replayEnabled
     ? replayEvents.slice(0, replayStep + 1).filter((event) => event.kind === 'defeat').map((event) => event.targetName).filter((name): name is string => Boolean(name))
     : [];
-  const canContinueRoute = isWon && !isBossWon && !pendingEnhance && !hasPendingEnhance && replayDone;
+  const canContinueRoute = isWon && !isBossWon && !isFinalBossWon && !pendingEnhance && !hasPendingEnhance && replayDone;
   const replayNotifiedKey = useRef('');
   const snapshotUnits = currentReplayEvent?.units;
   const displayEnemyWithSnapshot = displayEnemy ? applySnapshot(displayEnemy, snapshotUnits) : null;
@@ -459,7 +473,7 @@ export function BattleScreen({ battle, boss, gold, team, pendingEnhance, pending
   }, [currentReplayEvent?.kind, replayEnabled, replayEvents.length, replayStep]);
 
   useEffect(() => {
-    if (!replayEnabled || !replayDone || replayNotifiedKey.current === replayKey) {
+    if (!canNotifyReplayDone || !replayDone || replayNotifiedKey.current === replayKey) {
       return;
     }
 
@@ -467,7 +481,7 @@ export function BattleScreen({ battle, boss, gold, team, pendingEnhance, pending
     const delay = battle.type === 'boss' && (battle.phase === 'won' || battle.phase === 'lost') ? 2000 : 0;
     const timer = window.setTimeout(() => onReplayDone?.(), delay);
     return () => window.clearTimeout(timer);
-  }, [battle.phase, battle.type, onReplayDone, replayDone, replayEnabled, replayKey]);
+  }, [battle.phase, battle.type, canNotifyReplayDone, onReplayDone, replayDone, replayKey]);
 
   return (
     <div className="battle-hud-screen">
@@ -486,7 +500,7 @@ export function BattleScreen({ battle, boss, gold, team, pendingEnhance, pending
         <BattleTeamPanel team={team} liveStats={liveStats} />
 
         <main className="battle-center-panel">
-          <section className="battle-card-panel battle-enemy-stage">
+          <section className={`battle-card-panel battle-enemy-stage ${displayEnemyWithSnapshot ? enemyThemeClass(displayEnemyWithSnapshot) : ''}`}>
             <h3>{battle.type === 'boss' ? 'Boss Info' : '敌人'}</h3>
             {displayEnemyWithSnapshot && (
               <BattleUnitCard

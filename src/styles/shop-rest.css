@@ -3,6 +3,33 @@
   gap: 14px;
 }
 
+.rest-shell .side-panel {
+  position: sticky;
+  z-index: 80;
+  overflow: visible;
+}
+
+.rest-shell .screen-panel {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+}
+
+.rest-shell .compact-run-side-panel,
+.rest-shell .compact-run-side-panel .hud-card,
+.rest-shell .team-dock-member,
+.rest-shell .bond-progress-row {
+  overflow: visible;
+}
+
+.rest-shell .dock-popover {
+  z-index: 1000;
+}
+
 .shop-shell .side-panel {
   z-index: 60;
 }
@@ -699,13 +726,26 @@
     object-fit: contain;
   }
 
+  .shop-bond-chip.bond-theme-card {
+    --bond-bg-position: center;
+    --bond-bg-size: 100% 100%;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
+      var(--bond-bg-image, none) var(--bond-bg-position) / var(--bond-bg-size) no-repeat,
+      rgba(255, 255, 255, 0.72);
+  }
+
   .shop-bond-chip.active {
     border-color: rgba(142, 90, 215, 0.45);
-    background: rgba(244, 236, 255, 0.78);
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0)),
+      var(--bond-bg-image, none) var(--bond-bg-position) / var(--bond-bg-size) no-repeat,
+      rgba(244, 236, 255, 0.78);
   }
 
   .shop-bond-chip.inactive {
-    opacity: 0.62;
+    opacity: 0.78;
+    filter: saturate(0.78);
   }
 
   .shop-confirm-modal,

@@ -354,6 +354,16 @@
   overflow: visible;
 }
 
+.bond-theme-card {
+  --bond-bg-image: none;
+  --bond-bg-position: center;
+  --bond-bg-size: 100% 100%;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
+    var(--bond-bg-image) var(--bond-bg-position) / var(--bond-bg-size) no-repeat,
+    rgba(255, 255, 255, 0.94);
+}
+
 .bond-item.active {
   border-color: #8e5ad7;
   box-shadow: inset 0 -4px 0 rgba(142, 90, 215, 0.14);
@@ -371,9 +381,11 @@
 
 .bond-item-details {
   display: grid;
-  gap: 3px;
+  gap: 5px;
   min-height: 0;
   overflow: hidden;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .bond-item-heading {
@@ -389,14 +401,19 @@
 
 
 .bond-item strong {
-  font-size: 0.92rem;
+  color: #111827;
+  font-size: 0.96rem;
+  font-weight: 1000;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 0 8px rgba(255, 255, 255, 0.72);
 }
 
 .bond-item span,
 .bond-item small {
-  color: #596579;
+  color: #29344b;
   font-size: 0.82rem;
+  font-weight: 900;
   line-height: 1.45;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 7px rgba(255, 255, 255, 0.68);
 }
 
 .bond-item small {
@@ -418,7 +435,10 @@
   gap: 8px;
   border: 1px solid #d8e1ee;
   border-radius: 8px;
-  background: #ffffff;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.2)),
+    var(--bond-bg-image, none) center / 100% 100% no-repeat,
+    #ffffff;
   padding: 10px;
   pointer-events: none;
   box-shadow: 0 18px 44px rgba(33, 44, 65, 0.18);
@@ -470,9 +490,49 @@
 
 .draft-bond-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 10px;
+  gap: 14px;
+}
+
+.draft-bond-grid .bond-item {
+  --bond-bg-size: 100% 100%;
+  --bond-bg-position: center;
+  min-height: 122px;
+  height: auto;
+  gap: 8px;
+  align-content: center;
+  justify-items: center;
+  padding: 14px 18px;
+  text-align: center;
+}
+
+.draft-bond-grid .bond-item-heading {
+  justify-content: center;
+}
+
+.draft-bond-grid .bond-item-heading > div {
+  display: grid;
+  justify-items: center;
+}
+
+.draft-bond-grid .bond-logo {
+  width: 56px;
+  height: 42px;
+}
+
+.draft-bond-grid .bond-item-details {
+  justify-items: center;
+  overflow: visible;
+  width: min(100%, 620px);
+}
+
+.draft-bond-grid .bond-item small {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  line-height: 1.58;
 }
 
 .compact-character,
@@ -899,6 +959,32 @@
   grid-template-columns: 64px minmax(220px, 1fr);
   align-items: center;
   gap: 14px;
+  border: 1px solid rgba(217, 224, 241, 0.86);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 20px rgba(28, 42, 72, 0.08);
+}
+
+.damage-meter-row.rarity-normal {
+  border-color: rgba(122, 190, 228, 0.44);
+  background:
+    linear-gradient(135deg, rgba(237, 250, 255, 0.94), rgba(190, 229, 247, 0.58));
+}
+
+.damage-meter-row.rarity-star {
+  border-color: rgba(142, 90, 215, 0.42);
+  background:
+    linear-gradient(135deg, rgba(246, 240, 255, 0.94), rgba(205, 168, 242, 0.58));
+}
+
+.damage-meter-row.rarity-legendary {
+  border-color: rgba(211, 162, 31, 0.48);
+  background:
+    linear-gradient(135deg, rgba(255, 248, 216, 0.96), rgba(255, 220, 118, 0.62));
+}
+
+.damage-meter-row.not-deployed {
+  opacity: 0.68;
 }
 
 .damage-meter-avatar {
@@ -910,6 +996,7 @@
   width: 58px;
   height: 58px;
   border-width: 2px;
+  box-shadow: 0 8px 18px rgba(29, 40, 67, 0.18);
 }
 
 .damage-meter-row.not-deployed .damage-meter-avatar .avatar {
@@ -941,7 +1028,7 @@
   overflow: hidden;
   height: 14px;
   border-radius: 4px;
-  background: #e7edf5;
+  background: rgba(216, 225, 238, 0.72);
 }
 
 .damage-bar-track span {
@@ -1504,9 +1591,13 @@
 .rest-member-card.rarity-legendary,
 .rest-status-member.rarity-legendary,
 .shop-detail-card.rarity-legendary,
+.enhance-choice.rarity-legendary,
+.damage-meter-row.rarity-legendary,
+.battle-slot.rarity-legendary,
 .battle-mini-item.rarity-legendary {
   --rarity-border: #d3a21f;
   --rarity-soft: rgba(211, 162, 31, 0.2);
+  --rarity-bg: linear-gradient(135deg, rgba(255, 248, 216, 0.96), rgba(255, 220, 118, 0.5));
 }
 
 .character-card.rarity-star,
@@ -1515,9 +1606,13 @@
 .rest-member-card.rarity-star,
 .rest-status-member.rarity-star,
 .shop-detail-card.rarity-star,
+.enhance-choice.rarity-star,
+.damage-meter-row.rarity-star,
+.battle-slot.rarity-star,
 .battle-mini-item.rarity-star {
   --rarity-border: #8e5ad7;
   --rarity-soft: rgba(142, 90, 215, 0.18);
+  --rarity-bg: linear-gradient(135deg, rgba(247, 241, 255, 0.96), rgba(202, 168, 242, 0.48));
 }
 
 .character-card.rarity-normal,
@@ -1526,9 +1621,13 @@
 .rest-member-card.rarity-normal,
 .rest-status-member.rarity-normal,
 .shop-detail-card.rarity-normal,
+.enhance-choice.rarity-normal,
+.damage-meter-row.rarity-normal,
+.battle-slot.rarity-normal,
 .battle-mini-item.rarity-normal {
-  --rarity-border: #ffffff;
-  --rarity-soft: rgba(175, 187, 204, 0.24);
+  --rarity-border: #9ed4f0;
+  --rarity-soft: rgba(82, 166, 211, 0.2);
+  --rarity-bg: linear-gradient(135deg, rgba(237, 250, 255, 0.96), rgba(190, 229, 247, 0.52));
 }
 
 .character-card.rarity-enemy {
@@ -1544,6 +1643,39 @@
 .character-card.rarity-boss {
   --rarity-border: #111111;
   --rarity-soft: rgba(17, 17, 17, 0.16);
+}
+
+.character-card.rarity-legendary,
+.character-card.rarity-star,
+.character-card.rarity-normal,
+.compact-character.rarity-legendary,
+.compact-character.rarity-star,
+.compact-character.rarity-normal,
+.blessing-member-card.rarity-legendary,
+.blessing-member-card.rarity-star,
+.blessing-member-card.rarity-normal,
+.rest-member-card.rarity-legendary,
+.rest-member-card.rarity-star,
+.rest-member-card.rarity-normal,
+.rest-status-member.rarity-legendary,
+.rest-status-member.rarity-star,
+.rest-status-member.rarity-normal,
+.shop-detail-card.rarity-legendary,
+.shop-detail-card.rarity-star,
+.shop-detail-card.rarity-normal,
+.enhance-choice.rarity-legendary,
+.enhance-choice.rarity-star,
+.enhance-choice.rarity-normal,
+.damage-meter-row.rarity-legendary,
+.damage-meter-row.rarity-star,
+.damage-meter-row.rarity-normal,
+.battle-slot.rarity-legendary,
+.battle-slot.rarity-star,
+.battle-slot.rarity-normal,
+.battle-mini-item.rarity-legendary,
+.battle-mini-item.rarity-star,
+.battle-mini-item.rarity-normal {
+  background: var(--rarity-bg, rgba(255, 255, 255, 0.94));
 }
 
 .character-card.rarity-legendary,
@@ -1625,6 +1757,12 @@
   position: relative;
   border: 0;
   cursor: default;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0)),
+    var(--bond-bg-image, none) center / cover no-repeat,
+    #f1e8ff;
+  color: #3b3151;
+  box-shadow: inset 0 0 0 1px rgba(123, 88, 166, 0.22);
 }
 
 .bond-tag .bond-member-popover {
@@ -1681,15 +1819,15 @@
   }
 
   .draft-bond-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
   .draft-bond-grid .bond-item {
     grid-template-rows: auto auto;
     height: auto;
-    min-height: 0;
-    padding: 10px;
+    min-height: 126px;
+    padding: 10px 11px;
   }
 
   .draft-bond-grid .bond-item-details {
@@ -1707,5 +1845,11 @@
 
   .draft-bond-grid .bond-member-popover {
     display: none !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .draft-bond-grid {
+    grid-template-columns: 1fr;
   }
 }

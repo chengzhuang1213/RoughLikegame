@@ -52,7 +52,7 @@ export const SECONDARY_BONDS: SecondaryBond[] = [
   },
   {
     id: 'nozoeli',
-    name: '绘希',
+    name: '\u6c38\u6052',
     memberIds: ['eli', 'nozomi'],
     description: '绘里与希都上场时，二者每回合开始随机获得攻击+2或速度+2。',
   },

@@ -139,7 +139,7 @@ export interface Character {
   dreamerNodeCount?: number;
 }
 
-export type NodeType = 'battle' | 'elite' | 'shop' | 'rest' | 'boss';
+export type NodeType = 'battle' | 'elite' | 'shop' | 'rest' | 'boss' | 'question';
 export type BattleType = 'battle' | 'elite' | 'boss';
 
 export interface MapNode {

@@ -959,12 +959,12 @@ function applyNozoeliTurnStart(attacker: Character, runtime: RuntimeState, log: 
 
   if (Math.random() < 0.5) {
     attacker.battleAttackBonus += 2;
-    log.push(`${attacker.name}触发「绘希」，随机获得本场攻击力+2。`);
+    log.push(`${attacker.name}触发「永恒」，随机获得本场攻击力+2。`);
     return;
   }
 
   attacker.battleSpeedBonus += 2;
-  log.push(`${attacker.name}触发「绘希」，随机获得本场速度+2。`);
+  log.push(`${attacker.name}触发「永恒」，随机获得本场速度+2。`);
 }
 
 function drawNozomiTarotCard(flags: RuntimeFlags): 'hanged' | 'wheel' | 'magician' {

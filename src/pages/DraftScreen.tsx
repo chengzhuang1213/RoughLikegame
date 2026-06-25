@@ -129,6 +129,7 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
               `3人：${bond.group.level3Description}`,
             ]}
             key={bond.group.id}
+            bondId={bond.group.id}
             memberIds={bond.group.memberIds}
             logoSrc={BOND_LOGO_SRC[bond.group.id]}
             name={bond.group.name}
@@ -142,6 +143,7 @@ function DraftBondPreview({ selectedCharacters }: { selectedCharacters: Characte
             count={activeBond.count}
             details={[activeBond.bond.description]}
             key={activeBond.bond.id}
+            bondId={activeBond.bond.id}
             memberIds={activeBond.bond.memberIds}
             logoSrc={BOND_LOGO_SRC[activeBond.bond.id]}
             name={activeBond.bond.name}
@@ -185,13 +187,14 @@ function DraftCandidateCard({ template, selected, onClick }: DraftCandidateCardP
         <div className="card-tags">
           <div className="card-tag-row bond-row">
             {primaryBond ? (
-              <BondTag label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} summary={groupDetail(template.group)} />
+              <BondTag bondId={primaryBond.id} label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} summary={groupDetail(template.group)} />
             ) : (
               <InfoPill className="group-tag" label={GROUP_LABELS[template.group]} tooltip={groupDetail(template.group)} />
             )}
             {secondaryBonds.map((bond) => (
               <BondTag
                 className="secondary-bond-tag"
+                bondId={bond.id}
                 key={bond.id}
                 label={bond.name}
                 memberIds={bond.memberIds}
@@ -264,12 +267,12 @@ function DraftCandidateDetailModal({ template, selected, onClose, onConfirm }: {
             <div className="card-tags">
               <div className="card-tag-row bond-row">
                 {primaryBond ? (
-                  <BondTag label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} summary={groupDetail(template.group)} />
+                  <BondTag bondId={primaryBond.id} label={GROUP_LABELS[template.group]} memberIds={primaryBond.memberIds} ownedIds={tagOwnedIds} summary={groupDetail(template.group)} />
                 ) : (
                   <InfoPill className="group-tag" label={GROUP_LABELS[template.group]} tooltip={groupDetail(template.group)} />
                 )}
                 {secondaryBonds.map((bond) => (
-                  <BondTag className="secondary-bond-tag" key={bond.id} label={bond.name} memberIds={bond.memberIds} ownedIds={tagOwnedIds} summary={bond.description} />
+                  <BondTag bondId={bond.id} className="secondary-bond-tag" key={bond.id} label={bond.name} memberIds={bond.memberIds} ownedIds={tagOwnedIds} summary={bond.description} />
                 ))}
               </div>
               <div className="card-tag-row meta-row">

@@ -45,6 +45,8 @@ import {
 
 type Screen = 'start' | 'draft' | 'map' | 'battle' | 'result' | 'shop' | 'rest' | 'blessing' | 'win' | 'loss';
 
+const DISABLED_CLICK_SFX = new Set<SfxKey>(['next', 'mapSelect', 'buy']);
+
 function getMusicKey(run: RunState): MusicKey {
   if (run.screen === 'battle') {
     return 'battle';
@@ -268,6 +270,10 @@ function App() {
   }
 
   function playSfx(key: SfxKey) {
+    if (DISABLED_CLICK_SFX.has(key)) {
+      return;
+    }
+
     if (musicMuted || !audioUnlockedRef.current) {
       return;
     }
@@ -511,16 +517,33 @@ function App() {
         };
       }
 
-      return {
-        ...previous,
-        screen: 'rest',
-        currentNodeId: node.id,
-        mapPulseNodeId: null,
-        result: null,
-        restHealUsed: false,
-        restReviveUsed: false,
-        eventLog: [...previous.eventLog, `进入${NODE_LABELS[node.type]}节点。`],
-      };
+      if (node.type === 'rest') {
+        return {
+          ...previous,
+          screen: 'rest',
+          currentNodeId: node.id,
+          mapPulseNodeId: null,
+          result: null,
+          restHealUsed: false,
+          restReviveUsed: false,
+          eventLog: [...previous.eventLog, `进入${NODE_LABELS[node.type]}节点。`],
+        };
+      }
+
+      if (node.type === 'question') {
+        const clearedNodeMap = completeMapNode(previous.map, node.id);
+        return {
+          ...previous,
+          screen: 'map',
+          map: clearedNodeMap,
+          currentNodeId: null,
+          mapPulseNodeId: node.id,
+          result: null,
+          eventLog: [...previous.eventLog, '进入机遇节点。问号房功能准备中。'],
+        };
+      }
+
+      return previous;
     });
   }
 
@@ -707,7 +730,7 @@ function App() {
           result,
           runStats,
           battleStatsOpen: false,
-          screen: isFinalBoss ? 'win' : 'battle',
+          screen: 'battle',
           pendingEnhance: canEnhance
             ? { source: battle.type === 'boss' ? 'boss' : 'elite', cost: battle.type === 'boss' ? 0 : ENHANCE_COST, free: battle.type === 'boss' }
             : null,
@@ -720,9 +743,9 @@ function App() {
           ...previous,
           team,
           battle,
-          battleStatsOpen: true,
+          battleStatsOpen: false,
           enhanceReady: false,
-          screen: 'loss',
+          screen: 'battle',
         };
       }
 
@@ -821,8 +844,16 @@ function App() {
         return previous;
       }
 
+      if (previous.battle.phase === 'lost') {
+        return { ...previous, screen: 'loss', battleStatsOpen: true };
+      }
+
       if (previous.battle.phase !== 'won') {
         return previous;
+      }
+
+      if (previous.battle.type === 'boss' && previous.boss.bossTier === 3) {
+        return { ...previous, screen: 'win', battleStatsOpen: false };
       }
 
       return { ...previous, battleStatsOpen: true };
@@ -958,7 +989,7 @@ function App() {
             : null;
 
   return (
-    <div className={`app-shell game-shell ${sceneClass} ${run.screen === 'map' ? 'map-hud-shell' : ''} ${run.screen === 'battle' ? 'battle-shell' : ''} ${run.screen === 'shop' ? 'shop-shell' : ''}`} onPointerDownCapture={handleShellPointerDown}>
+    <div className={`app-shell game-shell ${sceneClass} ${run.screen === 'map' ? 'map-hud-shell' : ''} ${run.screen === 'battle' ? 'battle-shell' : ''} ${run.screen === 'shop' ? 'shop-shell' : ''} ${run.screen === 'rest' ? 'rest-shell' : ''}`} onPointerDownCapture={handleShellPointerDown}>
       {particleVariant && <SceneParticles variant={particleVariant} />}
       <MusicToggleButton muted={musicMuted} onToggle={toggleMusic} className="floating-music-toggle" />
       {run.screen !== 'shop' && (

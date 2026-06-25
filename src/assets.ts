@@ -1,4 +1,5 @@
 import type { MapNode } from './game';
+import type { CSSProperties } from 'react';
 
 export type MusicKey = 'home' | 'draftShop' | 'battle' | 'rest' | 'map';
 export type SfxKey = 'mapSelect' | 'next' | 'buy' | 'battleVictory';
@@ -33,6 +34,26 @@ export const BOND_LOGO_SRC: Record<string, string> = {
   energetic_idol: '/ui/bond-logos/energetic_idol.png',
 };
 
+export const BOND_BACKGROUND_SRC: Record<string, string> = {
+  cute: '/ui/bond-backgrounds/cute.png?v=user-banners',
+  silver: '/ui/bond-backgrounds/silver.png?v=user-banners',
+  president: '/ui/bond-backgrounds/president.png?v=user-banners',
+  mystery: '/ui/bond-backgrounds/mystery.png?v=user-banners',
+  little_devil: '/ui/bond-backgrounds/little_devil.png?v=user-banners',
+  nozoeli: '/ui/bond-backgrounds/nozoeli.png?v=user-banners',
+  angel: '/ui/bond-backgrounds/angel.png?v=user-banners',
+  dreamer: '/ui/bond-backgrounds/dreamer.png?v=user-banners',
+  lucky_star: '/ui/bond-backgrounds/lucky_star.png?v=user-banners',
+  campus_leader: '/ui/bond-backgrounds/campus_leader.png?v=user-banners',
+  full_speed: '/ui/bond-backgrounds/full_speed.png?v=user-banners',
+  energetic_idol: '/ui/bond-backgrounds/energetic_idol.png?v=user-banners',
+};
+
+export function bondBackgroundStyle(bondId?: string): CSSProperties | undefined {
+  const src = bondId ? BOND_BACKGROUND_SRC[bondId] : undefined;
+  return src ? ({ '--bond-bg-image': `url("${src}")` } as CSSProperties) : undefined;
+}
+
 export const DRAFT_IMAGE_BY_ID: Record<string, string> = {
   ayumu: '/cards/Image/102Uehara-Ayumu-KN13pl.png',
   rina: '/cards/Image/97Tennoji-Rina-YB8JUo.png',
@@ -54,4 +75,5 @@ export const NODE_ICON_SRC: Record<MapNode['type'], string> = {
   shop: '/ui/node-icons/shop.png',
   rest: '/ui/node-icons/rest.png',
   boss: '/ui/node-icons/boss.png',
+  question: '/ui/node-icons/question.png',
 };

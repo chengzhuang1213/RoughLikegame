@@ -257,32 +257,109 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.24));
 }
 
-.map-hud-shell .map-board,
 .battle-card-panel,
 .battle-right-panel .battle-log,
 .screen-panel,
 .side-panel,
-.map-legend,
-.map-actions button,
-.hud-card {
+.compact-run-side-panel,
+.battle-left-panel,
+.battle-right-panel,
+.map-hud-shell .map-stage,
+.map-hud-shell .map-board,
+.map-hud-shell .map-left-rail,
+.map-hud-shell .map-right-rail,
+.map-hud-shell .map-legend,
+.map-hud-shell .hud-card {
   backdrop-filter: none !important;
 }
 
-.map-hud-shell .map-board {
-  background: rgba(5, 17, 38, 0.12);
+.battle-card-panel,
+.battle-right-panel .battle-log,
+.screen-panel,
+.side-panel,
+.compact-run-side-panel,
+.battle-left-panel,
+.battle-right-panel {
+  backdrop-filter: none !important;
 }
 
-.map-hud-shell .boss-forecast,
-.map-legend,
-.map-actions button,
-.hud-card {
+.map-hud-shell .map-stage,
+.map-hud-shell .map-board {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.map-hud-shell .map-left-rail,
+.map-hud-shell .map-right-rail,
+.map-hud-shell .map-legend,
+.map-hud-shell .hud-card,
+.side-panel,
+.compact-run-side-panel,
+.battle-left-panel,
+.battle-right-panel {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.map-hud-shell .map-actions button,
+.map-hud-shell .map-legend-toggle,
+.map-hud-shell .resource-pill,
+.map-hud-shell .team-dock-member,
+.map-hud-shell .team-empty-slot,
+.map-hud-shell .team-dock .hud-wide-button,
+.map-hud-shell .bond-progress-dock .hud-wide-button,
+.map-hud-shell .bond-progress-row {
   background: rgba(10, 23, 49, 0.46);
+}
+
+.map-hud-shell .team-dock-member.rarity-normal {
+  background:
+    linear-gradient(135deg, rgba(95, 157, 205, 0.62), rgba(37, 82, 135, 0.48)),
+    rgba(35, 76, 126, 0.52);
+}
+
+.map-hud-shell .team-dock-member.rarity-star {
+  background:
+    linear-gradient(135deg, rgba(138, 77, 200, 0.68), rgba(72, 42, 134, 0.52)),
+    rgba(74, 42, 133, 0.56);
+}
+
+.map-hud-shell .team-dock-member.rarity-legendary {
+  background:
+    linear-gradient(135deg, rgba(219, 160, 45, 0.72), rgba(116, 70, 18, 0.54)),
+    rgba(128, 82, 22, 0.58);
+}
+
+.map-hud-shell .bond-progress-row.active.bond-theme-card {
+  background:
+    linear-gradient(90deg, rgba(8, 16, 35, 0.18), rgba(255, 255, 255, 0.06)),
+    var(--bond-bg-image, none) var(--bond-bg-position) / var(--bond-bg-size) no-repeat,
+    rgba(20, 38, 70, 0.5);
+}
+
+.map-hud-shell .boss-forecast.boss-tier-1 {
+  background:
+    linear-gradient(135deg, rgba(86, 42, 146, 0.7), rgba(42, 25, 96, 0.54)),
+    rgba(54, 31, 102, 0.62);
+}
+
+.map-hud-shell .boss-forecast.boss-tier-2 {
+  background:
+    linear-gradient(135deg, rgba(174, 121, 28, 0.72), rgba(86, 52, 16, 0.56)),
+    rgba(122, 77, 18, 0.62);
+}
+
+.map-hud-shell .boss-forecast.boss-tier-3 {
+  background:
+    linear-gradient(135deg, rgba(169, 36, 68, 0.76), rgba(89, 16, 42, 0.58)),
+    rgba(126, 22, 50, 0.64);
 }
 
 .battle-card-panel,
 .battle-right-panel .battle-log,
 .game-shell:not(.map-hud-shell):not(.battle-shell) .screen-panel,
-.side-panel {
+.game-shell:not(.map-hud-shell):not(.battle-shell) .side-panel > .battle-card-panel,
+.game-shell:not(.map-hud-shell):not(.battle-shell) .side-panel > .panel-card {
   background: rgba(255, 255, 255, 0.82);
 }
 
@@ -300,6 +377,7 @@
 
 .enhance-choice {
   min-height: 132px;
+  background: var(--rarity-bg, #ffffff);
 }
 
 .enhance-choice .avatar {
@@ -359,6 +437,35 @@
 
 .battle-result-modal-actions button {
   min-height: 48px;
+}
+
+.battle-left-panel .battle-card-panel,
+.battle-left-panel .damage-meter-row {
+  backdrop-filter: blur(18px) saturate(1.35) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.35) !important;
+}
+
+.battle-left-panel {
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.battle-left-panel .battle-team-compact-panel,
+.battle-left-panel .damage-meter {
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.battle-left-panel .battle-mini-item,
+.battle-left-panel .battle-mini-empty,
+.battle-left-panel .battle-bond-logo-item,
+.battle-left-panel .damage-meter-row {
+  backdrop-filter: blur(10px) saturate(1.24) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(1.24) !important;
 }
 
 @media (max-width: 560px) {
